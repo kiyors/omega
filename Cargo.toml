@@ -11,7 +11,7 @@ crossterm = "0.29.0"
 ratatui = "0.30.2"
 color-eyre = "0.6.5"
 fuzzy-matcher = "0.3" # Fast scoring (or nucleo)
-dirs = "5.0"          # For home dir resolution
+dirs = "7.0"          # For home dir resolution
 walkdir = "2.5"       # Scanning git/worktree directories
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
