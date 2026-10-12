@@ -80,4 +80,14 @@ pub enum Commands {
         #[arg(short, long)]
         command: Option<String>,
     },
+
+    /// Clone a Git repository and immediately connect to a session inside it
+    Clone {
+        /// Repository URL or path to clone
+        repo: String,
+
+        /// Destination directory name or path (defaults to repository name)
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+    },
 }

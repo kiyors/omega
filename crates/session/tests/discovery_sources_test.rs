@@ -100,6 +100,7 @@ fn test_scan_config_sources() {
             path: proj.to_str().unwrap().to_string(),
             icon: Some("🦀".to_string()),
         }],
+        ..Default::default()
     };
 
     let (aliases, static_roots) = scan_config_sources(&config);

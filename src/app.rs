@@ -7,6 +7,10 @@ pub struct App {
     pub filtered: Vec<usize>, // Reusable index buffer pointing into `items`
     pub selected: usize,
     pub search_engine: SearchEngine,
+    pub preview_enabled: bool,
+    pub preview_width: u16,
+    pub preview_scroll: u16,
+    pub preview_content: String,
     scored_buffer: Vec<(usize, i64)>, // Reusable scoring buffer avoiding allocations
 }
 
@@ -20,6 +24,10 @@ impl App {
             filtered: Vec::with_capacity(count),
             selected: 0,
             search_engine: SearchEngine::new(),
+            preview_enabled: true,
+            preview_width: 55,
+            preview_scroll: 0,
+            preview_content: String::new(),
             scored_buffer: Vec::with_capacity(count),
         };
         app.refilter();
@@ -73,18 +81,35 @@ impl App {
                 self.filtered.len() - 1
             };
         }
+        self.preview_scroll = 0;
     }
 
     pub fn select_next(&mut self) {
         if !self.filtered.is_empty() && self.selected + 1 < self.filtered.len() {
             self.selected += 1;
+            self.preview_scroll = 0;
         }
     }
 
     pub fn select_prev(&mut self) {
         if self.selected > 0 {
             self.selected -= 1;
+            self.preview_scroll = 0;
         }
+    }
+
+    pub fn scroll_preview_up(&mut self) {
+        if self.preview_scroll > 0 {
+            self.preview_scroll -= 1;
+        }
+    }
+
+    pub fn scroll_preview_down(&mut self) {
+        self.preview_scroll = self.preview_scroll.saturating_add(1);
+    }
+
+    pub fn toggle_preview(&mut self) {
+        self.preview_enabled = !self.preview_enabled;
     }
 
     pub fn selected_item(&self) -> Option<&SessionCandidate> {

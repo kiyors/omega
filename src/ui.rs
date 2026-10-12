@@ -1,19 +1,46 @@
+use crate::ansi::parse_ansi_to_text;
 use crate::app::App;
 use omega_session::SessionSource;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
 };
+use std::rc::Rc;
+
+pub const MIN_PREVIEW_WIDTH_THRESHOLD: u16 = 100;
+
+pub fn should_render_preview(app: &App, area: Rect) -> bool {
+    app.preview_enabled && area.width >= MIN_PREVIEW_WIDTH_THRESHOLD
+}
+
+pub fn compute_horizontal_chunks(app: &App, area: Rect) -> Rc<[Rect]> {
+    if should_render_preview(app, area) {
+        let preview_pct = app.preview_width.clamp(10, 90);
+        let list_pct = 100 - preview_pct;
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(list_pct),
+                Constraint::Percentage(preview_pct),
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(100)])
+            .split(area)
+    }
+}
 
 pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Search Input
-            Constraint::Min(5),    // Session List
+            Constraint::Min(5),    // Session List + Preview
             Constraint::Length(1), // Footer Hint
         ])
         .split(frame.area());
@@ -23,12 +50,15 @@ pub fn render(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(" Search / Switch Session (Prefixes: :t tmux, :g git, @ alias) "),
         )
         .style(Style::default().fg(Color::Cyan));
     frame.render_widget(search_bar, chunks[0]);
 
-    // 2. Filtered List
+    // 2. Middle area: Horizontal split (List + Preview)
+    let middle_chunks = compute_horizontal_chunks(app, chunks[1]);
+
     let list_items: Vec<ListItem> = app
         .filtered
         .iter()
@@ -79,12 +109,32 @@ pub fn render(frame: &mut Frame, app: &App) {
         })
         .collect();
 
-    let list_widget =
-        List::new(list_items).block(Block::default().borders(Borders::ALL).title(" Workspaces "));
-    frame.render_widget(list_widget, chunks[1]);
+    let list_widget = List::new(list_items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Workspaces "),
+    );
+    frame.render_widget(list_widget, middle_chunks[0]);
+
+    // Render Preview Pane if active
+    if middle_chunks.len() > 1 {
+        let preview_text = parse_ansi_to_text(&app.preview_content);
+        let preview_widget = Paragraph::new(preview_text)
+            .scroll((app.preview_scroll, 0))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" Preview "),
+            );
+        frame.render_widget(preview_widget, middle_chunks[1]);
+    }
 
     // 3. Footer
-    let footer = Paragraph::new(" <Enter> Connect  |  <C-n>/<C-p> Move  |  <Esc> Exit")
-        .style(Style::default().fg(Color::DarkGray));
+    let footer = Paragraph::new(
+        " <Enter> Connect | <Up>/<Down> Navigate | <C-u>/<C-d> Scroll Preview | <C-p> Toggle Preview | <Esc> Exit",
+    )
+    .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(footer, chunks[2]);
 }

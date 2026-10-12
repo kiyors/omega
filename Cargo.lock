@@ -963,6 +963,7 @@ dependencies = [
  "omega-session",
  "ratatui",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

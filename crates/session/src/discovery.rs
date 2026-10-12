@@ -1,6 +1,7 @@
 use crate::models::{SessionCandidate, SessionSource};
+use crate::naming::NamingPipeline;
 use omega_config::Config;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Parses `tmux list-sessions` format: `#{session_name}:#{session_path}:#{session_attached}:#{session_windows}`
@@ -146,8 +147,22 @@ pub fn scan_git_repositories(roots: &[PathBuf], max_depth: usize) -> Vec<Session
             if entry.file_type().is_dir() {
                 let git_path = path.join(".git");
                 if git_path.exists() {
-                    let name = file_name.to_string();
-                    candidates.push(SessionCandidate::new(name, path, SessionSource::Git));
+                    if git_path.is_file() {
+                        // Linked worktree checkout
+                        let name =
+                            if let Some((repo, branch)) = resolve_worktree_info(path, &git_path) {
+                                NamingPipeline::new().resolve_worktree_name(&repo, &branch)
+                            } else {
+                                file_name.to_string()
+                            };
+                        candidates.push(SessionCandidate::new(name, path, SessionSource::Git));
+                    } else if git_path.is_dir() {
+                        // Standard Git repository
+                        let name = file_name.to_string();
+                        candidates.push(SessionCandidate::new(name, path, SessionSource::Git));
+                        let linked = discover_worktrees_from_admin(&git_path);
+                        candidates.extend(linked);
+                    }
                     // Don't recurse into subdirectories of an already detected repo
                     it.skip_current_dir();
                 }
@@ -156,6 +171,74 @@ pub fn scan_git_repositories(roots: &[PathBuf], max_depth: usize) -> Vec<Session
     }
 
     candidates
+}
+
+/// Inspects a worktree administrative directory (e.g. `<main_repo>/.git/worktrees/<name>`)
+/// and extracts the base repository name and checked out branch.
+pub fn inspect_worktree_admin(admin_path: &Path) -> Option<(String, String)> {
+    let head_path = admin_path.join("HEAD");
+    let head_content = std::fs::read_to_string(head_path).ok()?;
+    let branch = if let Some(ref_line) = head_content
+        .lines()
+        .find(|l| l.starts_with("ref: refs/heads/"))
+    {
+        ref_line
+            .strip_prefix("ref: refs/heads/")?
+            .trim()
+            .to_string()
+    } else {
+        head_content.trim().chars().take(7).collect::<String>()
+    };
+
+    let repo_root = admin_path.parent()?.parent()?.parent()?;
+    let repo_name = repo_root.file_name()?.to_str()?.to_string();
+
+    Some((repo_name, branch))
+}
+
+/// Resolves worktree information from a linked worktree root containing a `.git` file.
+pub fn resolve_worktree_info(worktree_root: &Path, git_file: &Path) -> Option<(String, String)> {
+    let content = std::fs::read_to_string(git_file).ok()?;
+    let gitdir_line = content.lines().find(|l| l.starts_with("gitdir:"))?;
+    let raw_admin = gitdir_line.strip_prefix("gitdir:")?.trim();
+    let admin_path = if Path::new(raw_admin).is_relative() {
+        worktree_root.join(raw_admin)
+    } else {
+        PathBuf::from(raw_admin)
+    };
+    inspect_worktree_admin(&admin_path)
+}
+
+/// Discovers linked worktrees registered in a main repository's `.git/worktrees` folder.
+pub fn discover_worktrees_from_admin(git_dir: &Path) -> Vec<SessionCandidate> {
+    let mut worktrees = Vec::new();
+    let wt_dir = git_dir.join("worktrees");
+    if !wt_dir.is_dir() {
+        return worktrees;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(wt_dir) {
+        let namer = NamingPipeline::new();
+        for entry in entries.flatten() {
+            let admin_path = entry.path();
+            if !admin_path.is_dir() {
+                continue;
+            }
+            let gitdir_file = admin_path.join("gitdir");
+            if let Ok(target_git) = std::fs::read_to_string(gitdir_file) {
+                let target_git_path = PathBuf::from(target_git.trim());
+                if let Some(target_dir) = target_git_path.parent()
+                    && target_dir.exists()
+                    && let Some((repo, branch)) = inspect_worktree_admin(&admin_path)
+                {
+                    let name = namer.resolve_worktree_name(&repo, &branch);
+                    worktrees.push(SessionCandidate::new(name, target_dir, SessionSource::Git));
+                }
+            }
+        }
+    }
+
+    worktrees
 }
 
 /// Extracts configured aliases and scans configured static project root folders using WalkDir.

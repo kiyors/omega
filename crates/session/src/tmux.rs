@@ -18,6 +18,7 @@ pub trait TmuxClient {
     fn attach_session(&mut self, target: &str) -> io::Result<()>;
     fn kill_session(&mut self, target: &str) -> io::Result<()>;
     fn switch_last(&mut self) -> io::Result<()>;
+    fn capture_pane(&self, target: &str) -> io::Result<String>;
 }
 
 #[derive(Default, Debug, Clone)]
@@ -132,6 +133,18 @@ impl TmuxClient for RealTmuxClient {
         }
         Ok(())
     }
+
+    fn capture_pane(&self, target: &str) -> io::Result<String> {
+        let output = Command::new("tmux")
+            .args(["capture-pane", "-e", "-p", "-t", target])
+            .output()?;
+        if !output.status.success() {
+            return Err(Error::other(format!(
+                "Failed to capture pane for tmux session '{target}'"
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +164,7 @@ pub struct MockTmuxClient {
     pub created_sessions: Vec<CreatedSessionRecord>,
     pub killed_sessions: Vec<String>,
     pub switched_last_called: bool,
+    pub captured_panes: std::collections::HashMap<String, String>,
 }
 
 impl MockTmuxClient {
@@ -212,6 +226,14 @@ impl TmuxClient for MockTmuxClient {
     fn switch_last(&mut self) -> io::Result<()> {
         self.switched_last_called = true;
         Ok(())
+    }
+
+    fn capture_pane(&self, target: &str) -> io::Result<String> {
+        if let Some(content) = self.captured_panes.get(target) {
+            Ok(content.clone())
+        } else {
+            Ok(format!("[tmux captured pane for {target}]"))
+        }
     }
 }
 

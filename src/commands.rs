@@ -119,6 +119,40 @@ pub fn execute_command<T: TmuxClient>(
             let name = namer.resolve_name(&canonical, config.dir_length, &existing);
             runner.connect(tmux, &name, &canonical, command.as_deref())?;
         }
+
+        Commands::Clone { repo, dir } => {
+            let target_path = match dir {
+                Some(d) => d,
+                None => {
+                    let clean = repo.trim_end_matches('/').trim_end_matches(".git");
+                    let name = clean.split(['/', ':']).next_back().unwrap_or("repo");
+                    PathBuf::from(name)
+                }
+            };
+
+            if !target_path.exists() {
+                let status = std::process::Command::new("git")
+                    .args(["clone", &repo])
+                    .arg(&target_path)
+                    .status()?;
+                if !status.success() {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Failed to clone repository '{}'",
+                        repo
+                    ));
+                }
+            }
+
+            let canonical = fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
+            let candidates = collector.collect_from_system(config);
+            let existing: Vec<(&str, &Path)> = candidates
+                .iter()
+                .filter(|c| c.source == SessionSource::Tmux)
+                .map(|c| (c.name.as_str(), c.path.as_path()))
+                .collect();
+            let name = namer.resolve_name(&canonical, config.dir_length, &existing);
+            runner.connect(tmux, &name, &canonical, None)?;
+        }
     }
 
     Ok(())
