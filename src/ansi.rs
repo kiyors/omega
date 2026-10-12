@@ -1,8 +1,8 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-/// Parses raw text containing ANSI SGR escape codes into Ratatui `Text`.
-pub fn parse_ansi_to_text(input: &str) -> Text<'static> {
+/// Parses raw text containing ANSI SGR escape codes into Ratatui `Text` using borrowed string slices.
+pub fn parse_ansi_to_text(input: &str) -> Text<'_> {
     let mut lines = Vec::new();
     let mut current_style = Style::default();
 
@@ -16,7 +16,7 @@ pub fn parse_ansi_to_text(input: &str) -> Text<'static> {
             if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
                 // Emit preceding text chunk if any
                 if chunk_start < i {
-                    let text = line_str[chunk_start..i].to_string();
+                    let text = &line_str[chunk_start..i];
                     if !text.is_empty() {
                         spans.push(Span::styled(text, current_style));
                     }
@@ -48,7 +48,7 @@ pub fn parse_ansi_to_text(input: &str) -> Text<'static> {
         }
 
         if chunk_start < bytes.len() {
-            let text = line_str[chunk_start..].to_string();
+            let text = &line_str[chunk_start..];
             if !text.is_empty() {
                 spans.push(Span::styled(text, current_style));
             }
@@ -84,6 +84,13 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
             4 => style = style.add_modifier(Modifier::UNDERLINED),
             7 => style = style.add_modifier(Modifier::REVERSED),
             9 => style = style.add_modifier(Modifier::CROSSED_OUT),
+
+            // SGR Off resets
+            22 => style = style.remove_modifier(Modifier::BOLD | Modifier::DIM),
+            23 => style = style.remove_modifier(Modifier::ITALIC),
+            24 => style = style.remove_modifier(Modifier::UNDERLINED),
+            27 => style = style.remove_modifier(Modifier::REVERSED),
+            29 => style = style.remove_modifier(Modifier::CROSSED_OUT),
 
             // Standard FG
             30 => style = style.fg(Color::Black),

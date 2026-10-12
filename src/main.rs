@@ -36,10 +36,11 @@ fn main() -> Result<()> {
     let mut app = App::new(sessions, initial_query);
     app.preview_enabled = config.tui.preview;
     app.preview_width = config.tui.preview_width;
+    app.preview_border = config.tui.preview_border;
 
     // Asynchronous debounced preview worker channel
     let (req_tx, req_rx) = std::sync::mpsc::channel::<Option<SessionCandidate>>();
-    let (res_tx, res_rx) = std::sync::mpsc::channel::<(String, String)>();
+    let (res_tx, res_rx) = std::sync::mpsc::channel::<(String, std::path::PathBuf, String)>();
 
     std::thread::spawn(move || {
         let generator = PreviewGenerator::new();
@@ -54,29 +55,39 @@ fn main() -> Result<()> {
 
             if let Some(cand) = candidate_opt {
                 let preview = generator.generate(&cand, &tmux);
-                let _ = res_tx.send((cand.name, preview));
+                let _ = res_tx.send((cand.name, cand.path, preview));
             }
         }
     });
 
     let mut terminal = ratatui::init();
     let events = EventHandler::new(Duration::from_millis(50));
-    let mut last_requested_name: Option<String> = None;
+    let mut last_requested_target: Option<(String, std::path::PathBuf)> = None;
 
     let chosen_session = loop {
         // Drain any incoming preview updates
-        while let Ok((target_name, preview)) = res_rx.try_recv() {
+        while let Ok((target_name, target_path, preview)) = res_rx.try_recv() {
             if let Some(cur) = app.selected_item()
                 && cur.name == target_name
+                && cur.path == target_path
             {
                 app.preview_content = preview;
             }
         }
 
         // Trigger preview request when selected candidate changes
-        let current_name = app.selected_item().map(|c| c.name.clone());
-        if current_name != last_requested_name {
-            last_requested_name = current_name;
+        let current_target = app
+            .selected_item()
+            .map(|c| (c.name.as_str(), c.path.as_path()));
+        let last_target_borrowed = last_requested_target
+            .as_ref()
+            .map(|(n, p)| (n.as_str(), p.as_path()));
+
+        if current_target != last_target_borrowed {
+            last_requested_target = app
+                .selected_item()
+                .map(|c| (c.name.clone(), c.path.clone()));
+            app.preview_content.clear(); // Clear stale preview immediately
             let _ = req_tx.send(app.selected_item().cloned());
         }
 

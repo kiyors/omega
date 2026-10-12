@@ -44,3 +44,16 @@ fn test_parse_ansi_256_colors() {
     assert_eq!(spans[0].content, "Color256");
     assert_eq!(spans[0].style.fg, Some(Color::Indexed(196)));
 }
+
+#[test]
+fn test_parse_ansi_sgr_off_modifiers() {
+    // Bold turned on with 1, then bold turned off with 22
+    let raw = "\x1b[1mBoldText\x1b[22mNormalText";
+    let text = parse_ansi_to_text(raw);
+
+    assert_eq!(text.lines.len(), 1);
+    let spans = &text.lines[0].spans;
+    assert_eq!(spans.len(), 2);
+    assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
+    assert!(!spans[1].style.add_modifier.contains(Modifier::BOLD));
+}

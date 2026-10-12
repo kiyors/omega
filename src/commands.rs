@@ -110,13 +110,7 @@ pub fn execute_command<T: TmuxClient>(
         Commands::Mkdir { path, command } => {
             fs::create_dir_all(&path)?;
             let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            let candidates = collector.collect_from_system(config);
-            let existing: Vec<(&str, &Path)> = candidates
-                .iter()
-                .filter(|c| c.source == SessionSource::Tmux)
-                .map(|c| (c.name.as_str(), c.path.as_path()))
-                .collect();
-            let name = namer.resolve_name(&canonical, config.dir_length, &existing);
+            let name = resolve_tmux_session_name(&namer, &canonical, config.dir_length, tmux);
             runner.connect(tmux, &name, &canonical, command.as_deref())?;
         }
 
@@ -144,16 +138,24 @@ pub fn execute_command<T: TmuxClient>(
             }
 
             let canonical = fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
-            let candidates = collector.collect_from_system(config);
-            let existing: Vec<(&str, &Path)> = candidates
-                .iter()
-                .filter(|c| c.source == SessionSource::Tmux)
-                .map(|c| (c.name.as_str(), c.path.as_path()))
-                .collect();
-            let name = namer.resolve_name(&canonical, config.dir_length, &existing);
+            let name = resolve_tmux_session_name(&namer, &canonical, config.dir_length, tmux);
             runner.connect(tmux, &name, &canonical, None)?;
         }
     }
 
     Ok(())
+}
+
+fn resolve_tmux_session_name<T: TmuxClient>(
+    namer: &NamingPipeline,
+    target_path: &Path,
+    dir_length: usize,
+    tmux: &T,
+) -> String {
+    let active_sessions = tmux.list_sessions().unwrap_or_default();
+    let existing: Vec<(&str, &Path)> = active_sessions
+        .iter()
+        .map(|s| (s.name.as_str(), s.path.as_path()))
+        .collect();
+    namer.resolve_name(target_path, dir_length, &existing)
 }

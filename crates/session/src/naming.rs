@@ -73,37 +73,6 @@ impl NamingPipeline {
         format!("{}--{}", repo_sanitized, branch_sanitized)
     }
 
-    /// Resolves worktree session name taking into account collisions with existing sessions.
-    pub fn resolve_worktree_name_with_existing(
-        &self,
-        repo: &str,
-        branch: &str,
-        path: &Path,
-        existing_sessions: &[(&str, &Path)],
-    ) -> String {
-        let base = self.resolve_worktree_name(repo, branch);
-        let mut candidate_name = base.clone();
-        let mut counter = 2;
-
-        loop {
-            let conflict = existing_sessions
-                .iter()
-                .find(|(name, _)| *name == candidate_name);
-            match conflict {
-                Some((_, existing_path)) => {
-                    if *existing_path == path {
-                        return candidate_name;
-                    }
-                    candidate_name = format!("{}-{}", base, counter);
-                    counter += 1;
-                }
-                None => {
-                    return candidate_name;
-                }
-            }
-        }
-    }
-
     /// Sanitizes branch name: converts slashes to '-' and characters illegal in tmux ('.' and ':') to '_'.
     pub fn sanitize_branch(&self, branch: &str) -> String {
         branch

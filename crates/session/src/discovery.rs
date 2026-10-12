@@ -190,7 +190,9 @@ pub fn inspect_worktree_admin(admin_path: &Path) -> Option<(String, String)> {
         head_content.trim().chars().take(7).collect::<String>()
     };
 
-    let repo_root = admin_path.parent()?.parent()?.parent()?;
+    let canonical_admin =
+        std::fs::canonicalize(admin_path).unwrap_or_else(|_| admin_path.to_path_buf());
+    let repo_root = canonical_admin.parent()?.parent()?.parent()?;
     let repo_name = repo_root.file_name()?.to_str()?.to_string();
 
     Some((repo_name, branch))
@@ -226,13 +228,20 @@ pub fn discover_worktrees_from_admin(git_dir: &Path) -> Vec<SessionCandidate> {
             }
             let gitdir_file = admin_path.join("gitdir");
             if let Ok(target_git) = std::fs::read_to_string(gitdir_file) {
-                let target_git_path = PathBuf::from(target_git.trim());
+                let raw_path = Path::new(target_git.trim());
+                let target_git_path = if raw_path.is_relative() {
+                    admin_path.join(raw_path)
+                } else {
+                    raw_path.to_path_buf()
+                };
                 if let Some(target_dir) = target_git_path.parent()
                     && target_dir.exists()
                     && let Some((repo, branch)) = inspect_worktree_admin(&admin_path)
                 {
                     let name = namer.resolve_worktree_name(&repo, &branch);
-                    worktrees.push(SessionCandidate::new(name, target_dir, SessionSource::Git));
+                    let canonical = std::fs::canonicalize(target_dir)
+                        .unwrap_or_else(|_| target_dir.to_path_buf());
+                    worktrees.push(SessionCandidate::new(name, canonical, SessionSource::Git));
                 }
             }
         }

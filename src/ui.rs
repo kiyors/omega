@@ -35,6 +35,15 @@ pub fn compute_horizontal_chunks(app: &App, area: Rect) -> Rc<[Rect]> {
     }
 }
 
+pub fn resolve_border_type(border_str: &str) -> BorderType {
+    match border_str {
+        "line" | "plain" => BorderType::Plain,
+        "double" => BorderType::Double,
+        "thick" => BorderType::Thick,
+        _ => BorderType::Rounded,
+    }
+}
+
 pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -109,10 +118,12 @@ pub fn render(frame: &mut Frame, app: &App) {
         })
         .collect();
 
+    let border_type = resolve_border_type(&app.preview_border);
+
     let list_widget = List::new(list_items).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_type(border_type)
             .title(" Workspaces "),
     );
     frame.render_widget(list_widget, middle_chunks[0]);
@@ -125,7 +136,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
+                    .border_type(border_type)
                     .title(" Preview "),
             );
         frame.render_widget(preview_widget, middle_chunks[1]);

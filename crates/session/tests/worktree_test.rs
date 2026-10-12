@@ -15,15 +15,9 @@ fn test_worktree_session_naming_sanitization() {
     let name2 = namer.resolve_worktree_name("omega", "feat/user:profile.v2");
     assert_eq!(name2, "omega--feat-user_profile_v2");
 
-    // Collision handling with existing sessions
-    let existing = [("omega--main", std::path::Path::new("/work/omega-main"))];
-    let name3 = namer.resolve_worktree_name_with_existing(
-        "omega",
-        "main",
-        std::path::Path::new("/work/omega-main-other"),
-        &existing,
-    );
-    assert_eq!(name3, "omega--main-2");
+    // Branch sanitization directly
+    let sanitized_branch = namer.sanitize_branch("bugfix/issue#42:login.fix");
+    assert_eq!(sanitized_branch, "bugfix-issue#42_login_fix");
 }
 
 #[test]

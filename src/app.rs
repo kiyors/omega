@@ -11,6 +11,7 @@ pub struct App {
     pub preview_width: u16,
     pub preview_scroll: u16,
     pub preview_content: String,
+    pub preview_border: String,
     scored_buffer: Vec<(usize, i64)>, // Reusable scoring buffer avoiding allocations
 }
 
@@ -28,6 +29,7 @@ impl App {
             preview_width: 55,
             preview_scroll: 0,
             preview_content: String::new(),
+            preview_border: "rounded".to_string(),
             scored_buffer: Vec::with_capacity(count),
         };
         app.refilter();
