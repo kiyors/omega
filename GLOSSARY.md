@@ -41,3 +41,15 @@ A retention mechanism that maintains a rolling history of the most recent auto-s
 ### Selective Restore
 
 The operation of restoring one specific named session from a saved snapshot without modifying or recreating other active or missing sessions.
+
+### Naming Pipeline
+
+The staged transformation sequence (`alias` → `Lua hook` → `regex substitutions` → `worktree/directory defaults` → `character sanitization`) that resolves an arbitrary workspace path or target into a valid, deterministic tmux session name.
+
+### Collision Suffix
+
+An incremental numeric suffix (e.g., `-2`, `-3`) automatically appended to a newly generated session name when an active tmux session with the same base name already exists pointing to a different directory.
+
+### Worktree Name Normalization
+
+The standard convention of formatting linked Git worktree session names as `<repo>--<sanitized-branch>`, preventing naming collisions across repositories sharing common branch names while keeping the parent repository explicit.
