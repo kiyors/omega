@@ -4,4 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fuzzy-matcher = "0.3"
+fuzzy-matcher.workspace = true
