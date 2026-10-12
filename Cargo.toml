@@ -1,13 +1,19 @@
 [workspace]
 members = [ "crates/session", "crates/search", "crates/config" ]
 
+[workspace.package]
+authors = [ "kiyors <gaurav23617@gmail.com>" ]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+
 [package]
-name        = "omega"
-version     = "0.1.0"
-description = "A high-performance terminal session and workspace navigator"
-authors     = [ "kiyors <gaurav23617@gmail.com>" ]
-license     = "MIT"
-edition     = "2024"
+name              = "omega"
+description       = "A high-performance terminal session and workspace navigator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 clap          = { features = [ "derive" ], version = "4.6" }

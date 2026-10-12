@@ -1,7 +1,7 @@
 [package]
-name    = "omega-session"
-version = "0.1.0"
-edition = "2024"
+name              = "omega-session"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 omega-config = { path = "../config", version = "0.1.0" }
