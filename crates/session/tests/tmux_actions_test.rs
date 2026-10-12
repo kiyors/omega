@@ -77,3 +77,16 @@ fn test_switch_last_session() {
     assert!(result.is_ok());
     assert!(mock.switched_last_called);
 }
+
+#[test]
+fn test_switch_last_session_outside_tmux() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = false;
+    mock.existing_sessions.push("prior-session".to_string());
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.last(&mut mock);
+
+    assert!(result.is_ok());
+    assert_eq!(mock.attached_to.as_deref(), Some("prior-session"));
+}

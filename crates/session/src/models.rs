@@ -31,6 +31,19 @@ impl SessionSource {
             Self::Zoxide => "",
         }
     }
+
+    /// Matches and strips a leading interactive sigil prefix (e.g. ":t ", ":g ", "@")
+    pub fn from_sigil(query: &str) -> Option<(Self, &str)> {
+        if let Some(rest) = query.strip_prefix(":t ") {
+            Some((Self::Tmux, rest.trim()))
+        } else if let Some(rest) = query.strip_prefix(":g ") {
+            Some((Self::Git, rest.trim()))
+        } else if let Some(rest) = query.strip_prefix('@') {
+            Some((Self::Alias, rest.trim()))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +69,19 @@ impl SessionCandidate {
             icon: None,
             attached: false,
             windows: None,
+        }
+    }
+
+    /// Inherits missing metadata (alias, icon, score) from another candidate.
+    pub fn inherit_metadata(&mut self, other: &Self) {
+        if self.alias.is_none() {
+            self.alias = other.alias.clone();
+        }
+        if self.icon.is_none() {
+            self.icon = other.icon.clone();
+        }
+        if self.score.is_none() {
+            self.score = other.score;
         }
     }
 }

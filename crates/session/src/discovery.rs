@@ -1,6 +1,5 @@
 use crate::models::{SessionCandidate, SessionSource};
 use omega_config::Config;
-use std::fs;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
@@ -81,6 +80,37 @@ pub fn parse_zoxide_output(raw: &str) -> Vec<SessionCandidate> {
     candidates
 }
 
+/// Window information discovered from tmux
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TmuxWindowInfo {
+    pub session_name: String,
+    pub window_name: String,
+    pub active: bool,
+}
+
+/// Parses `tmux list-windows -a` format: `#{session_name}:#{window_name}:#{window_active}`
+pub fn parse_tmux_windows(raw: &str) -> Vec<TmuxWindowInfo> {
+    let mut windows = Vec::new();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = trimmed.split(':').collect();
+        if parts.len() >= 3 {
+            windows.push(TmuxWindowInfo {
+                session_name: parts[0].to_string(),
+                window_name: parts[1].to_string(),
+                active: parts[2] == "1",
+            });
+        }
+    }
+
+    windows
+}
+
 /// Discovers Git repository roots and linked worktrees by detecting `.git` entries.
 pub fn scan_git_repositories(roots: &[PathBuf], max_depth: usize) -> Vec<SessionCandidate> {
     let mut candidates = Vec::new();
@@ -128,7 +158,7 @@ pub fn scan_git_repositories(roots: &[PathBuf], max_depth: usize) -> Vec<Session
     candidates
 }
 
-/// Extracts configured aliases and scans configured static project root folders.
+/// Extracts configured aliases and scans configured static project root folders using WalkDir.
 pub fn scan_config_sources(config: &Config) -> (Vec<SessionCandidate>, Vec<SessionCandidate>) {
     let mut aliases = Vec::with_capacity(config.aliases.len());
     for alias in &config.aliases {
@@ -144,18 +174,48 @@ pub fn scan_config_sources(config: &Config) -> (Vec<SessionCandidate>, Vec<Sessi
             continue;
         }
 
-        if let Ok(entries) = fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if !name.starts_with('.') {
-                        static_roots.push(SessionCandidate::new(name, path, SessionSource::Config));
-                    }
+        for entry in WalkDir::new(root)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .flatten()
+        {
+            if entry.file_type().is_dir() {
+                let file_name = entry.file_name().to_string_lossy();
+                if !file_name.starts_with('.') {
+                    static_roots.push(SessionCandidate::new(
+                        file_name.to_string(),
+                        entry.path(),
+                        SessionSource::Config,
+                    ));
                 }
             }
         }
     }
 
     (aliases, static_roots)
+}
+
+/// Finds the root directory of the current git repository or defaults to starting directory.
+pub fn find_workspace_root(start_dir: Option<&std::path::Path>) -> std::io::Result<PathBuf> {
+    let mut current = match start_dir {
+        Some(d) => d.to_path_buf(),
+        None => std::env::current_dir()?,
+    };
+
+    loop {
+        if current.join(".git").exists() {
+            return Ok(current);
+        }
+        if let Some(parent) = current.parent() {
+            current = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    match start_dir {
+        Some(d) => Ok(d.to_path_buf()),
+        None => std::env::current_dir(),
+    }
 }

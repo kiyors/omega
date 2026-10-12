@@ -1,6 +1,7 @@
 use crate::cli::Commands;
 use color_eyre::Result;
 use omega_config::Config;
+use omega_session::find_workspace_root;
 use omega_session::naming::NamingPipeline;
 use omega_session::{SessionCollector, SessionSource, TmuxActionRunner, TmuxClient};
 use std::env;
@@ -19,7 +20,7 @@ pub fn execute_command<T: TmuxClient>(
     match command {
         Commands::Connect {
             target,
-            switch: _,
+            switch,
             command,
         } => {
             // Check if target matches an existing candidate
@@ -33,7 +34,12 @@ pub fn execute_command<T: TmuxClient>(
                 None => {
                     let target_path = PathBuf::from(&target);
                     if target_path.exists() {
-                        let name = namer.resolve_name(&target_path, config.dir_length, &[]);
+                        let existing: Vec<(&str, &Path)> = candidates
+                            .iter()
+                            .filter(|c| c.source == SessionSource::Tmux)
+                            .map(|c| (c.name.as_str(), c.path.as_path()))
+                            .collect();
+                        let name = namer.resolve_name(&target_path, config.dir_length, &existing);
                         (name, target_path)
                     } else {
                         // Treat as raw session name in current dir
@@ -43,7 +49,14 @@ pub fn execute_command<T: TmuxClient>(
                 }
             };
 
-            runner.connect(tmux, &session_name, &session_path, command.as_deref())?;
+            if switch && tmux.is_inside_tmux() {
+                if !tmux.has_session(&session_name) {
+                    tmux.create_session(&session_name, &session_path, command.as_deref())?;
+                }
+                tmux.switch_client(&session_name)?;
+            } else {
+                runner.connect(tmux, &session_name, &session_path, command.as_deref())?;
+            }
         }
 
         Commands::List {
@@ -97,35 +110,16 @@ pub fn execute_command<T: TmuxClient>(
         Commands::Mkdir { path, command } => {
             fs::create_dir_all(&path)?;
             let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            let name = namer.resolve_name(&canonical, config.dir_length, &[]);
+            let candidates = collector.collect_from_system(config);
+            let existing: Vec<(&str, &Path)> = candidates
+                .iter()
+                .filter(|c| c.source == SessionSource::Tmux)
+                .map(|c| (c.name.as_str(), c.path.as_path()))
+                .collect();
+            let name = namer.resolve_name(&canonical, config.dir_length, &existing);
             runner.connect(tmux, &name, &canonical, command.as_deref())?;
         }
     }
 
     Ok(())
-}
-
-/// Finds the root directory of the current git repository or defaults to current working directory.
-pub fn find_workspace_root(start_dir: Option<&Path>) -> Result<PathBuf> {
-    let mut current = match start_dir {
-        Some(d) => d.to_path_buf(),
-        None => env::current_dir()?,
-    };
-
-    loop {
-        if current.join(".git").exists() {
-            return Ok(current);
-        }
-        if let Some(parent) = current.parent() {
-            current = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
-
-    // Default to starting directory if no git root found
-    match start_dir {
-        Some(d) => Ok(d.to_path_buf()),
-        None => Ok(env::current_dir()?),
-    }
 }

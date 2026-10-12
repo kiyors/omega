@@ -43,4 +43,9 @@ impl SearchEngine {
         results.sort_by_key(|a| std::cmp::Reverse(a.score));
         results
     }
+
+    /// Computes match score of query against a single candidate string.
+    pub fn score(&self, query: &str, candidate: &str) -> Option<i64> {
+        self.matcher.fuzzy_match(candidate, query)
+    }
 }

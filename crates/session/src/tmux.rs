@@ -2,8 +2,16 @@ use std::io::{self, Error};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TmuxSessionRecord {
+    pub name: String,
+    pub path: PathBuf,
+    pub attached: bool,
+}
+
 pub trait TmuxClient {
     fn is_inside_tmux(&self) -> bool;
+    fn list_sessions(&self) -> io::Result<Vec<TmuxSessionRecord>>;
     fn has_session(&self, name: &str) -> bool;
     fn create_session(&mut self, name: &str, path: &Path, command: Option<&str>) -> io::Result<()>;
     fn switch_client(&mut self, target: &str) -> io::Result<()>;
@@ -18,6 +26,36 @@ pub struct RealTmuxClient;
 impl TmuxClient for RealTmuxClient {
     fn is_inside_tmux(&self) -> bool {
         std::env::var("TMUX").is_ok()
+    }
+
+    fn list_sessions(&self) -> io::Result<Vec<TmuxSessionRecord>> {
+        let output = Command::new("tmux")
+            .args([
+                "list-sessions",
+                "-F",
+                "#{session_name}:#{session_path}:#{session_attached}",
+            ])
+            .output()?;
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+        let raw = String::from_utf8_lossy(&output.stdout);
+        let records = raw
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.trim().split(':').collect();
+                if parts.len() >= 3 {
+                    Some(TmuxSessionRecord {
+                        name: parts[0].to_string(),
+                        path: PathBuf::from(parts[1]),
+                        attached: parts[2] == "1",
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(records)
     }
 
     fn has_session(&self, name: &str) -> bool {
@@ -107,6 +145,7 @@ pub struct CreatedSessionRecord {
 pub struct MockTmuxClient {
     pub inside_tmux: bool,
     pub existing_sessions: Vec<String>,
+    pub sessions: Vec<TmuxSessionRecord>,
     pub switched_to: Option<String>,
     pub attached_to: Option<String>,
     pub created_sessions: Vec<CreatedSessionRecord>,
@@ -123,6 +162,22 @@ impl MockTmuxClient {
 impl TmuxClient for MockTmuxClient {
     fn is_inside_tmux(&self) -> bool {
         self.inside_tmux
+    }
+
+    fn list_sessions(&self) -> io::Result<Vec<TmuxSessionRecord>> {
+        if !self.sessions.is_empty() {
+            Ok(self.sessions.clone())
+        } else {
+            Ok(self
+                .existing_sessions
+                .iter()
+                .map(|s| TmuxSessionRecord {
+                    name: s.clone(),
+                    path: PathBuf::from(format!("/path/{}", s)),
+                    attached: false,
+                })
+                .collect())
+        }
     }
 
     fn has_session(&self, name: &str) -> bool {
@@ -191,6 +246,19 @@ impl TmuxActionRunner {
     }
 
     pub fn last<T: TmuxClient>(&self, client: &mut T) -> io::Result<()> {
-        client.switch_last()
+        if client.is_inside_tmux() {
+            client.switch_last()
+        } else {
+            let sessions = client.list_sessions()?;
+            if let Some(target) = sessions
+                .iter()
+                .find(|s| !s.attached)
+                .or_else(|| sessions.first())
+            {
+                client.attach_session(&target.name)
+            } else {
+                Err(Error::other("No tmux sessions found to attach to"))
+            }
+        }
     }
 }

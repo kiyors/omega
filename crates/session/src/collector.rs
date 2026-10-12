@@ -46,29 +46,10 @@ impl SessionCollector {
                     let existing = &mut result[existing_idx];
 
                     if candidate.source.priority() < existing.source.priority() {
-                        // Candidate has higher priority than existing
-                        // Inherit metadata from existing if candidate doesn't have it
-                        if candidate.alias.is_none() {
-                            candidate.alias = existing.alias.take();
-                        }
-                        if candidate.icon.is_none() {
-                            candidate.icon = existing.icon.take();
-                        }
-                        if candidate.score.is_none() {
-                            candidate.score = existing.score;
-                        }
+                        candidate.inherit_metadata(existing);
                         *existing = candidate;
                     } else {
-                        // Existing has higher or equal priority. Inherit metadata from candidate if missing.
-                        if existing.alias.is_none() {
-                            existing.alias = candidate.alias;
-                        }
-                        if existing.icon.is_none() {
-                            existing.icon = candidate.icon;
-                        }
-                        if existing.score.is_none() {
-                            existing.score = candidate.score;
-                        }
+                        existing.inherit_metadata(&candidate);
                     }
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
@@ -105,9 +86,17 @@ impl SessionCollector {
         all.extend(aliases);
         all.extend(static_roots);
 
-        // 3. Git repositories in configured roots
-        if !config.roots.is_empty() {
-            let git_repos = crate::discovery::scan_git_repositories(&config.roots, 3);
+        // 3. Git repositories in configured roots (or current working directory)
+        let git_roots = if !config.roots.is_empty() {
+            config.roots.clone()
+        } else if let Ok(cwd) = std::env::current_dir() {
+            vec![cwd]
+        } else {
+            Vec::new()
+        };
+
+        if !git_roots.is_empty() {
+            let git_repos = crate::discovery::scan_git_repositories(&git_roots, 3);
             all.extend(git_repos);
         }
 

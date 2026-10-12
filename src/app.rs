@@ -4,9 +4,10 @@ use omega_session::{SessionCandidate, SessionSource};
 pub struct App {
     pub query: String,
     pub items: Vec<SessionCandidate>,
-    pub filtered: Vec<usize>, // Indices pointing into `items`
+    pub filtered: Vec<usize>, // Reusable index buffer pointing into `items`
     pub selected: usize,
     pub search_engine: SearchEngine,
+    scored_buffer: Vec<(usize, i64)>, // Reusable scoring buffer avoiding allocations
 }
 
 impl App {
@@ -16,9 +17,10 @@ impl App {
         let mut app = Self {
             query,
             items,
-            filtered: (0..count).collect(),
+            filtered: Vec::with_capacity(count),
             selected: 0,
             search_engine: SearchEngine::new(),
+            scored_buffer: Vec::with_capacity(count),
         };
         app.refilter();
         app
@@ -27,48 +29,41 @@ impl App {
     pub fn refilter(&mut self) {
         let trimmed = self.query.trim();
 
-        // Check for interactive sigil prefixes
-        let (source_filter, search_query) = if let Some(rest) = trimmed.strip_prefix(":t ") {
-            (Some(SessionSource::Tmux), rest.trim())
-        } else if let Some(rest) = trimmed.strip_prefix(":g ") {
-            (Some(SessionSource::Git), rest.trim())
-        } else if let Some(rest) = trimmed.strip_prefix('@') {
-            (Some(SessionSource::Alias), rest.trim())
-        } else {
-            (None, trimmed)
+        // Check for interactive sigil prefixes using domain method
+        let (source_filter, search_query) = match SessionSource::from_sigil(trimmed) {
+            Some((source, query)) => (Some(source), query),
+            None => (None, trimmed),
         };
 
-        // Filter indices by source if requested
-        let candidate_indices: Vec<usize> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, item)| {
-                if let Some(expected_source) = source_filter {
-                    if item.source == expected_source {
-                        Some(idx)
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(idx)
-                }
-            })
-            .collect();
+        self.filtered.clear();
 
         if search_query.is_empty() {
-            self.filtered = candidate_indices;
+            for (idx, item) in self.items.iter().enumerate() {
+                if let Some(expected) = source_filter
+                    && item.source != expected
+                {
+                    continue;
+                }
+                self.filtered.push(idx);
+            }
         } else {
-            let names: Vec<&str> = candidate_indices
-                .iter()
-                .map(|&idx| self.items[idx].name.as_str())
-                .collect();
+            self.scored_buffer.clear();
+            for (idx, item) in self.items.iter().enumerate() {
+                if let Some(expected) = source_filter
+                    && item.source != expected
+                {
+                    continue;
+                }
+                if let Some(score) = self.search_engine.score(search_query, &item.name) {
+                    self.scored_buffer.push((idx, score));
+                }
+            }
 
-            let matches = self.search_engine.search(search_query, &names);
-            self.filtered = matches
-                .into_iter()
-                .map(|m| candidate_indices[m.index])
-                .collect();
+            self.scored_buffer
+                .sort_by_key(|&(_, score)| std::cmp::Reverse(score));
+
+            self.filtered
+                .extend(self.scored_buffer.iter().map(|&(idx, _)| idx));
         }
 
         if self.selected >= self.filtered.len() {

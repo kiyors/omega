@@ -37,9 +37,18 @@ Tested test-first (TDD) across all pre-agreed seams:
 - `crates/session/tests/dedup_test.rs`: Priority hierarchy, symlink resolution, alias metadata inheritance, attached session exclusion.
 - `crates/session/tests/discovery_sources_test.rs`: Parsers for `tmux list-sessions`, `zoxide query --list --score`, filesystem `.git` detection (directories and worktree file pointers), and static config scanning.
 - `crates/session/tests/naming_test.rs`: Path segment extraction (`dir_length`), character sanitization (`.`/`:` → `_`), and collision suffix incrementation (`-2`, `-3`).
-- `crates/session/tests/tmux_actions_test.rs`: Multiplexer client detection, automatic session creation, client switching, and detachment.
-- `crates/session/tests/bench_test.rs`: 1,000 candidate deduplication verified under 30ms (measured at < 1ms).
+- `crates/session/tests/tmux_actions_test.rs`: Multiplexer client detection, automatic session creation, client switching, and detachment both inside and outside tmux.
+- `crates/session/tests/bench_test.rs`: 1,000 real filesystem directory canonical deduplication benchmarked under 30ms.
 - `crates/search/tests/search_test.rs`: Fuzzy scoring, exact match precedence, empty query handling.
 - `tests/cli_test.rs`: Clap argument parsing for all subcommands.
 
-Total: 28 unit and integration tests passing. Clean `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`.
+Total: 29 unit and integration tests passing. Clean `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`.
+
+---
+
+## 3. Post-Review Refinements
+- **Zero-Allocation Hot Path**: Refactored `App::refilter()` to reuse pre-allocated index and scoring buffers without intermediate `.collect::<Vec<_>>()`, satisfying `AGENTS.md` §5.1 and §5.2.
+- **Outside-Tmux Bounce**: Enhanced `omega last` to query available sessions and attach when called outside active tmux environments.
+- **Collision Resolution Wiring**: Passed active session records to `NamingPipeline` across CLI dispatchers.
+- **Crate Boundary Alignment**: Consolidated `find_workspace_root` inside `omega-session::discovery`.
+- **Benchmark Authenticity**: Tested real filesystem canonicalization across 1,000 directories on disk.
