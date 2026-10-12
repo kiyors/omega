@@ -65,3 +65,19 @@ A formatting mechanism for headless listing (`omega list --format "<template>"`)
 ### Convenience Actions
 
 Atomic multi-step workflow commands (`last`, `root`, `clone`, `mkdir`) built into the Omega CLI to eliminate shell alias and script boilerplate.
+
+### Configuration Root
+
+The base configuration directory (`$XDG_CONFIG_HOME/omega/` or path configured via `OMEGA_CONFIG`) hosting `init.lua`, modular `lua/` libraries, and an auto-sourced `plugins/` folder.
+
+### Declarative Setup Table
+
+The primary options table passed to `omega.setup({ ... })` specifying global preferences, sort ordering, keybindings, aliases, and directory wildcards.
+
+### Startup Layout
+
+A declarative configuration structure specifying window names, pane subdivisions, layout styles, and initial commands automatically provisioned when a new tmux session is launched.
+
+### Wildcard Session Rule
+
+A path-globbing pattern rule (`*`, `**`) that applies default icons, window layouts, or startup commands to any session created within matching directory trees.
