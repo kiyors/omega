@@ -53,3 +53,15 @@ An incremental numeric suffix (e.g., `-2`, `-3`) automatically appended to a new
 ### Worktree Name Normalization
 
 The standard convention of formatting linked Git worktree session names as `<repo>--<sanitized-branch>`, preventing naming collisions across repositories sharing common branch names while keeping the parent repository explicit.
+
+### CLI Mode
+
+Non-interactive execution of Omega subcommands (e.g., `list`, `connect`, `kill`, `last`, `root`, `save`, `restore`) designed for terminal pipeline scripting and external launcher integrations without launching the interactive TUI.
+
+### Output Templating
+
+A formatting mechanism for headless listing (`omega list --format "<template>"`) that interpolates session attributes (`{name}`, `{path}`, `{source}`, `{active_window}`) into user-defined text layouts without requiring external JSON processors.
+
+### Convenience Actions
+
+Atomic multi-step workflow commands (`last`, `root`, `clone`, `mkdir`) built into the Omega CLI to eliminate shell alias and script boilerplate.
