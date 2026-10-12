@@ -1,0 +1,27 @@
+name: Dependency Hygiene
+
+on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+  push:
+    branches:
+      - main
+
+jobs:
+  check-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fast pre-built binary installers
+      - uses: taiki-e/install-action@cargo-deny
+      - uses: taiki-e/install-action@cargo-machete
+
+      - name: Check for duplicate and banned crates
+        run: cargo deny check bans
+
+      - name: Check for unused dependencies
+        run: cargo machete

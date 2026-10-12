@@ -1,0 +1,24 @@
+[graph]
+all-features = true
+targets      = [  ]
+
+[bans]
+highlight         = "all"
+multiple-versions = "deny"
+wildcards         = "deny"
+
+deny = [
+  { name = "lazy_static", wrappers = [
+    "sharded-slab",
+  ] },
+  { name = "openssl", wrappers = [
+  ] },
+]
+
+# Allow specific transitive duplicates introduced by external ecosystem crates
+skip = [
+  # ratatui-core ecosystem: kasuari pulls 0.16.1 while lru pulls 0.17.1
+  { name = "hashbrown", version = "=0.16.1" },
+  # crossterm/strum pull syn 2 while clap/serde pull syn 3
+  { name = "syn", version = "=2.0.119" },
+]
