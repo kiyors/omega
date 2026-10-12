@@ -1,2 +1,5 @@
 /target
 /.direnv
+/reference
+/.claude/skills
+/.agents/skills
