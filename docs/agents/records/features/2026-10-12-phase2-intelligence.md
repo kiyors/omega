@@ -50,4 +50,11 @@ Developed test-first (TDD) across all 4 confirmed seams:
   - `test_app_preview_state_and_scrolling`: Verifies scroll up, scroll down, toggle, and scroll reset on selection change.
   - `test_ui_responsive_collapse_and_split`: Verifies single-pane collapse below 100 columns and 55% split on wide screens.
 
-Total: 39 unit and integration tests passing. `cargo clippy --all-targets -- -D warnings` clean (0 warnings). `cargo fmt --check` clean.
+Total: 42 unit and integration tests passing. `cargo clippy --all-targets -- -D warnings` clean (0 warnings). `cargo fmt --check` clean.
+
+5. **Post-Review & Polish Deliverables**:
+   - `Config::load()` and `Config::load_from_path(&path)` with JSON file discovery in `$XDG_CONFIG_HOME/omega/config.json` and `~/.config/omega/config.json`.
+   - Templating expansions in `omega list --format` supporting `{icon}`, `{windows}`, `{attached}`, and `{score}`.
+   - Refined boundary detection on interactive sigils (`:t`, `:t <query>`, `:g`, `:g <query>`, `@<query>`).
+   - Dynamic list header `Workspaces (X/Y)`, dynamic preview title `Preview: <name>`, and empty state feedback.
+   - Empty pane/directory fallback notices in preview generation.
