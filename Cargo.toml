@@ -1,22 +1,75 @@
+[workspace]
+members = [ "crates/session", "crates/search", "crates/config" ]
+
 [package]
-name = "omega"
-version = "0.1.0"
-description = "An example generated using the event-driven template"
-authors = ["kiyors <gaurav23617@gmail.com>"]
-license = "MIT"
-edition = "2024"
+name        = "omega"
+version     = "0.1.0"
+description = "A high-performance terminal session and workspace navigator"
+authors     = [ "kiyors <gaurav23617@gmail.com>" ]
+license     = "MIT"
+edition     = "2024"
 
 [dependencies]
-crossterm = "0.29.0"
-ratatui = "0.30.2"
-color-eyre = "0.6.5"
-fuzzy-matcher = "0.3" # Fast scoring (or nucleo)
-dirs = "7.0"          # For home dir resolution
-walkdir = "2.5"       # Scanning git/worktree directories
+clap          = { features = [ "derive" ], version = "4.5" }
+color-eyre    = "0.6.5"
+crossterm     = "0.29.0"
+dirs          = "7.0"
+omega-config  = { path = "crates/config" }
+omega-search  = { path = "crates/search" }
+omega-session = { path = "crates/session" }
+ratatui       = "0.30.2"
+serde         = { features = [ "derive" ], version = "1.0" }
+serde_json    = "1.0"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
 codegen-units = 1
-lto = true
-opt-level = "s"
-strip = true
+lto           = true
+opt-level     = "s"
+strip         = true
+
+[workspace.lints.clippy]
+# 1. The Pedantic Baseline
+pedantic = { level = "warn", priority = -1 }
+
+# 2. The "No Cheating" Guard
+allow_attributes                = "deny"
+allow_attributes_without_reason = "deny"
+
+# 3. Panic & Silent Failure Guards
+expect_used      = "deny"
+indexing_slicing = "deny"
+panic            = "deny"
+string_slice     = "deny"
+todo             = "deny"
+unimplemented    = "deny"
+unreachable      = "deny"
+unwrap_used      = "deny"
+
+# 4. Async & Concurrency Footguns
+await_holding_lock        = "deny"
+await_holding_refcell_ref = "deny"
+let_underscore_future     = "deny"
+
+# 5. Leftover Debugging
+dbg_macro    = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+
+# 6. Performance Baseline (Catches needless_collect, map_entry, etc.)
+perf = { level = "deny", priority = -1 }
+
+# 7. Explicit Allocation & Clone Guards
+cloned_instead_of_copied = "deny"
+inefficient_to_string    = "deny"
+redundant_clone          = "deny"
+unnecessary_to_owned     = "deny"
+
+# 8. String & Buffer Re-allocation Guards (Restriction Group)
+format_push_string = "deny" # Prevents string += &format!(...), forcing push_str or write!
+str_to_string      = "deny" # Forces explicit to_owned() so allocations stand out in reviews
+string_add         = "deny" # Disallows s1 + &s2 heap reallocations; forces mutation/preallocation
+
+# 9. Slice & Collection Initialization
+slow_vector_initialization = "deny" # Flags vec![0; n] patterns that zero-fill unnecessarily before overwriting
+vec_init_then_push         = "deny" # Flags empty Vec creation followed immediately by repeated pushes without capacity

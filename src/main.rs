@@ -1,20 +1,37 @@
-mod app;
-mod event;
-mod ui;
-
-use app::{App, SessionItem, SessionType};
+use clap::Parser;
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
-use event::{Event, EventHandler};
-use std::process::Command;
+use omega::app::App;
+use omega::cli::Cli;
+use omega::commands::execute_command;
+use omega::event::{Event, EventHandler};
+use omega::ui;
+use omega_config::Config;
+use omega_session::{RealTmuxClient, SessionCollector, TmuxActionRunner};
 use std::time::Duration;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // Gather initial sessions (Tmux + Local directories)
-    let sessions = discover_sessions();
-    let mut app = App::new(sessions);
+    let cli = Cli::parse();
+    let config = Config::default();
+    let mut tmux_client = RealTmuxClient;
+
+    if let Some(cmd) = cli.command {
+        return execute_command(cmd, &mut tmux_client, &config);
+    }
+
+    // Launch interactive TUI picker
+    let collector = SessionCollector::new();
+    let sessions = collector.collect_from_system(&config);
+
+    let initial_query = if cli.query.is_empty() {
+        None
+    } else {
+        Some(cli.query.join(" "))
+    };
+
+    let mut app = App::new(sessions, initial_query);
 
     let mut terminal = ratatui::init();
     let events = EventHandler::new(Duration::from_millis(250));
@@ -65,48 +82,9 @@ fn main() -> Result<()> {
     ratatui::restore();
 
     if let Some(target) = chosen_session {
-        switch_or_attach(&target)?;
+        let runner = TmuxActionRunner::new();
+        runner.connect(&mut tmux_client, &target.name, &target.path, None)?;
     }
 
-    Ok(())
-}
-
-fn discover_sessions() -> Vec<SessionItem> {
-    let mut items = Vec::new();
-
-    // Query active tmux sessions
-    if let Ok(output) = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}:#{session_path}"])
-        .output()
-    {
-        if output.status.success() {
-            let str_out = String::from_utf8_lossy(&output.stdout);
-            for line in str_out.lines() {
-                let parts: Vec<&str> = line.split(':').collect();
-                if let [name, path] = parts.as_slice() {
-                    items.push(SessionItem {
-                        name: name.to_string(),
-                        path: path.to_string(),
-                        kind: SessionType::Tmux,
-                    });
-                }
-            }
-        }
-    }
-    items
-}
-
-fn switch_or_attach(item: &SessionItem) -> Result<()> {
-    let in_tmux = std::env::var("TMUX").is_ok();
-
-    if in_tmux {
-        Command::new("tmux")
-            .args(["switch-client", "-t", &item.name])
-            .status()?;
-    } else {
-        Command::new("tmux")
-            .args(["attach-session", "-t", &item.name])
-            .status()?;
-    }
     Ok(())
 }

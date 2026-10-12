@@ -19,6 +19,8 @@ omega/
 ├── src/                       # Application orchestrator & interactive TUI
 │   ├── main.rs                # Process initialization & terminal lifecycle
 │   ├── app.rs                 # Central application state machine & action dispatch
+│   ├── cli.rs                 # Clap CLI parsing & command definitions
+│   ├── commands.rs            # Headless CLI command execution handlers
 │   ├── event.rs               # Event polling loop (crossterm keyboard/tick events)
 │   └── ui.rs                  # Ratatui rendering engine & layout composition
 ├── tests/                     # Integration test suites & end-to-end scenarios
@@ -169,7 +171,7 @@ Omega operates as an event-driven terminal application that reads active environ
 
 ## 9. Future Considerations & Roadmap
 
-1. **Formal Workspace Split**: Extract existing modules in `src/` into standalone workspace crates under `crates/` (`crates/session`, `crates/search`, `crates/config`).
+1. **Formal Workspace Split**: Completed. Partitioned into workspace member crates `crates/session`, `crates/search`, and `crates/config`.
 2. **Background Async Scanner**: Offload filesystem walks to background worker threads or Rayon iterators to ensure zero frame drops during initial launch.
 3. **Daemon / Persistent Cache**: Support an optional lightweight background cache for instantaneous session resolution on large file trees.
 

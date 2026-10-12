@@ -1,4 +1,5 @@
-use crate::app::{App, SessionType};
+use crate::app::App;
+use omega_session::SessionSource;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -22,7 +23,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Search / Switch Session "),
+                .title(" Search / Switch Session (Prefixes: :t tmux, :g git, @ alias) "),
         )
         .style(Style::default().fg(Color::Cyan));
     frame.render_widget(search_bar, chunks[0]);
@@ -36,9 +37,24 @@ pub fn render(frame: &mut Frame, app: &App) {
             let item = &app.items[idx];
             let is_selected = i == app.selected;
 
-            let badge = match item.kind {
-                SessionType::Tmux => Span::styled(" [tmux] ", Style::default().fg(Color::Green)),
-                SessionType::Git => Span::styled(" [git]  ", Style::default().fg(Color::Blue)),
+            let badge = match item.source {
+                SessionSource::Tmux => Span::styled(" [tmux]  ", Style::default().fg(Color::Green)),
+                SessionSource::Git => Span::styled(" [git]   ", Style::default().fg(Color::Blue)),
+                SessionSource::Alias => {
+                    Span::styled(" [alias] ", Style::default().fg(Color::Magenta))
+                }
+                SessionSource::Config => {
+                    Span::styled(" [config]", Style::default().fg(Color::Cyan))
+                }
+                SessionSource::Zoxide => {
+                    Span::styled(" [zoxide]", Style::default().fg(Color::Yellow))
+                }
+            };
+
+            let icon_span = if let Some(icon) = &item.icon {
+                Span::raw(format!("{} ", icon))
+            } else {
+                Span::raw("")
             };
 
             let prefix = if is_selected { "> " } else { "  " };
@@ -53,9 +69,10 @@ pub fn render(frame: &mut Frame, app: &App) {
             ListItem::new(Line::from(vec![
                 Span::raw(prefix),
                 badge,
+                icon_span,
                 Span::styled(&item.name, style),
                 Span::styled(
-                    format!("  ({})", item.path),
+                    format!("  ({})", item.path.display()),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
@@ -63,11 +80,11 @@ pub fn render(frame: &mut Frame, app: &App) {
         .collect();
 
     let list_widget =
-        List::new(list_items).block(Block::default().borders(Borders::ALL).title(" Sessions "));
+        List::new(list_items).block(Block::default().borders(Borders::ALL).title(" Workspaces "));
     frame.render_widget(list_widget, chunks[1]);
 
     // 3. Footer
-    let footer = Paragraph::new(" <Enter> Switch  |  <C-n>/<C-p> Move  |  <Esc> Exit")
+    let footer = Paragraph::new(" <Enter> Connect  |  <C-n>/<C-p> Move  |  <Esc> Exit")
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(footer, chunks[2]);
 }

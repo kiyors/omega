@@ -60,6 +60,7 @@
                 openssl
                 pkg-config
                 rust-analyzer
+                taplo
               ]
               ++ lib.optionals stdenv.isDarwin [
                 libiconv
