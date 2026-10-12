@@ -112,3 +112,35 @@ fn test_non_directory_fallback_dedup() {
     assert_eq!(result[0].name, "remote-sesh");
     assert_eq!(result[1].name, "different-sesh");
 }
+
+#[test]
+fn test_sigil_matching_precision() {
+    assert_eq!(
+        SessionSource::from_sigil(":t"),
+        Some((SessionSource::Tmux, ""))
+    );
+    assert_eq!(
+        SessionSource::from_sigil(":t my-session"),
+        Some((SessionSource::Tmux, "my-session"))
+    );
+    assert_eq!(SessionSource::from_sigil(":today"), None);
+
+    assert_eq!(
+        SessionSource::from_sigil(":g"),
+        Some((SessionSource::Git, ""))
+    );
+    assert_eq!(
+        SessionSource::from_sigil(":g repo-name"),
+        Some((SessionSource::Git, "repo-name"))
+    );
+    assert_eq!(SessionSource::from_sigil(":game"), None);
+
+    assert_eq!(
+        SessionSource::from_sigil("@my-alias"),
+        Some((SessionSource::Alias, "my-alias"))
+    );
+    assert_eq!(
+        SessionSource::from_sigil("@ my-alias"),
+        Some((SessionSource::Alias, "my-alias"))
+    );
+}

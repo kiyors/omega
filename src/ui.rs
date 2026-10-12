@@ -68,68 +68,84 @@ pub fn render(frame: &mut Frame, app: &App) {
     // 2. Middle area: Horizontal split (List + Preview)
     let middle_chunks = compute_horizontal_chunks(app, chunks[1]);
 
-    let list_items: Vec<ListItem> = app
-        .filtered
-        .iter()
-        .enumerate()
-        .map(|(i, &idx)| {
-            let item = &app.items[idx];
-            let is_selected = i == app.selected;
+    let list_items: Vec<ListItem> = if app.filtered.is_empty() {
+        vec![ListItem::new(Span::styled(
+            "  No matching workspaces found",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        app.filtered
+            .iter()
+            .enumerate()
+            .map(|(i, &idx)| {
+                let item = &app.items[idx];
+                let is_selected = i == app.selected;
 
-            let badge = match item.source {
-                SessionSource::Tmux => Span::styled(" [tmux]  ", Style::default().fg(Color::Green)),
-                SessionSource::Git => Span::styled(" [git]   ", Style::default().fg(Color::Blue)),
-                SessionSource::Alias => {
-                    Span::styled(" [alias] ", Style::default().fg(Color::Magenta))
-                }
-                SessionSource::Config => {
-                    Span::styled(" [config]", Style::default().fg(Color::Cyan))
-                }
-                SessionSource::Zoxide => {
-                    Span::styled(" [zoxide]", Style::default().fg(Color::Yellow))
-                }
-            };
+                let badge = match item.source {
+                    SessionSource::Tmux => {
+                        Span::styled(" [tmux]  ", Style::default().fg(Color::Green))
+                    }
+                    SessionSource::Git => {
+                        Span::styled(" [git]   ", Style::default().fg(Color::Blue))
+                    }
+                    SessionSource::Alias => {
+                        Span::styled(" [alias] ", Style::default().fg(Color::Magenta))
+                    }
+                    SessionSource::Config => {
+                        Span::styled(" [config]", Style::default().fg(Color::Cyan))
+                    }
+                    SessionSource::Zoxide => {
+                        Span::styled(" [zoxide]", Style::default().fg(Color::Yellow))
+                    }
+                };
 
-            let icon_span = if let Some(icon) = &item.icon {
-                Span::raw(format!("{} ", icon))
-            } else {
-                Span::raw("")
-            };
+                let icon_span = if let Some(icon) = &item.icon {
+                    Span::raw(format!("{} ", icon))
+                } else {
+                    Span::raw("")
+                };
 
-            let prefix = if is_selected { "> " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
+                let prefix = if is_selected { "> " } else { "  " };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
 
-            ListItem::new(Line::from(vec![
-                Span::raw(prefix),
-                badge,
-                icon_span,
-                Span::styled(&item.name, style),
-                Span::styled(
-                    format!("  ({})", item.path.display()),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]))
-        })
-        .collect();
+                ListItem::new(Line::from(vec![
+                    Span::raw(prefix),
+                    badge,
+                    icon_span,
+                    Span::styled(&item.name, style),
+                    Span::styled(
+                        format!("  ({})", item.path.display()),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]))
+            })
+            .collect()
+    };
 
     let border_type = resolve_border_type(&app.preview_border);
+    let list_title = format!(" Workspaces ({}/{}) ", app.filtered.len(), app.items.len());
 
     let list_widget = List::new(list_items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
-            .title(" Workspaces "),
+            .title(list_title),
     );
     frame.render_widget(list_widget, middle_chunks[0]);
 
     // Render Preview Pane if active
     if middle_chunks.len() > 1 {
+        let preview_title = if let Some(item) = app.selected_item() {
+            format!(" Preview: {} ", item.name)
+        } else {
+            " Preview ".to_string()
+        };
         let preview_text = parse_ansi_to_text(&app.preview_content);
         let preview_widget = Paragraph::new(preview_text)
             .scroll((app.preview_scroll, 0))
@@ -137,7 +153,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(border_type)
-                    .title(" Preview "),
+                    .title(preview_title),
             );
         frame.render_widget(preview_widget, middle_chunks[1]);
     }

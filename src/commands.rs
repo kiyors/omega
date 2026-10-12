@@ -83,7 +83,24 @@ pub fn execute_command<T: TmuxClient>(
                     let formatted = fmt
                         .replace("{name}", &c.name)
                         .replace("{path}", &c.path.to_string_lossy())
-                        .replace("{source}", &format!("{:?}", c.source).to_lowercase());
+                        .replace("{source}", &format!("{:?}", c.source).to_lowercase())
+                        .replace("{icon}", c.icon.as_deref().unwrap_or(""))
+                        .replace(
+                            "{windows}",
+                            &c.windows
+                                .map(|w| w.to_string())
+                                .unwrap_or_else(|| "-".to_string()),
+                        )
+                        .replace(
+                            "{attached}",
+                            if c.attached { "attached" } else { "detached" },
+                        )
+                        .replace(
+                            "{score}",
+                            &c.score
+                                .map(|s| format!("{:.1}", s))
+                                .unwrap_or_else(|| "0.0".to_string()),
+                        );
                     println!("{}", formatted);
                 }
             } else {

@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
-    let config = Config::default();
+    let config = Config::load();
     let mut tmux_client = RealTmuxClient;
 
     if let Some(cmd) = cli.command {

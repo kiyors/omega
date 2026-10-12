@@ -18,9 +18,16 @@ impl PreviewGenerator {
     /// - Directories: Compact directory tree listing
     pub fn generate<T: TmuxClient>(&self, candidate: &SessionCandidate, tmux: &T) -> String {
         match candidate.source {
-            SessionSource::Tmux => tmux.capture_pane(&candidate.name).unwrap_or_else(|e| {
-                format!("Error capturing tmux pane for '{}': {}", candidate.name, e)
-            }),
+            SessionSource::Tmux => {
+                let raw = tmux.capture_pane(&candidate.name).unwrap_or_else(|e| {
+                    format!("Error capturing tmux pane for '{}': {}", candidate.name, e)
+                });
+                if raw.trim().is_empty() {
+                    "[Session active - empty terminal pane]".to_string()
+                } else {
+                    raw
+                }
+            }
             SessionSource::Git => self.generate_git_preview(&candidate.path),
             SessionSource::Alias | SessionSource::Config | SessionSource::Zoxide => {
                 if candidate.path.join(".git").exists() {
@@ -57,12 +64,14 @@ impl PreviewGenerator {
             .current_dir(path)
             .output();
 
-        if let Ok(lg) = log_cmd
-            && lg.status.success()
-        {
-            output.push_str("=== Recent Commits ===\n");
-            output.push_str(&String::from_utf8_lossy(&lg.stdout));
-            output.push('\n');
+        if let Ok(lg) = log_cmd {
+            if lg.status.success() {
+                output.push_str("=== Recent Commits ===\n");
+                output.push_str(&String::from_utf8_lossy(&lg.stdout));
+                output.push('\n');
+            } else if output.contains("=== Git Status ===") {
+                output.push_str("=== Recent Commits ===\n(No commits yet)\n");
+            }
         }
 
         if output.trim().is_empty() {

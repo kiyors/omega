@@ -32,11 +32,18 @@ impl SessionSource {
         }
     }
 
-    /// Matches and strips a leading interactive sigil prefix (e.g. ":t", ":t ", ":g", ":g ", "@")
+    /// Matches and strips a leading interactive sigil prefix:
+    /// - `@<query>` for aliases
+    /// - `:t` or `:t <query>` for tmux
+    /// - `:g` or `:g <query>` for git
     pub fn from_sigil(query: &str) -> Option<(Self, &str)> {
-        if let Some(rest) = query.strip_prefix(":t") {
+        if query == ":t" {
+            Some((Self::Tmux, ""))
+        } else if let Some(rest) = query.strip_prefix(":t ") {
             Some((Self::Tmux, rest.trim_start()))
-        } else if let Some(rest) = query.strip_prefix(":g") {
+        } else if query == ":g" {
+            Some((Self::Git, ""))
+        } else if let Some(rest) = query.strip_prefix(":g ") {
             Some((Self::Git, rest.trim_start()))
         } else if let Some(rest) = query.strip_prefix('@') {
             Some((Self::Alias, rest.trim_start()))

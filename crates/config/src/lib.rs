@@ -79,3 +79,36 @@ impl Default for Config {
         }
     }
 }
+
+impl Config {
+    /// Loads configuration from standard paths (`$XDG_CONFIG_HOME/omega/config.json`,
+    /// `~/.config/omega/config.json`) or falls back to default.
+    pub fn load() -> Self {
+        if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
+            let path = PathBuf::from(config_home).join("omega/config.json");
+            if path.exists()
+                && let Ok(cfg) = Self::load_from_path(&path)
+            {
+                return cfg;
+            }
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            let path = PathBuf::from(home).join(".config/omega/config.json");
+            if path.exists()
+                && let Ok(cfg) = Self::load_from_path(&path)
+            {
+                return cfg;
+            }
+        }
+
+        Self::default()
+    }
+
+    /// Loads configuration from an explicit file path.
+    pub fn load_from_path(path: &std::path::Path) -> std::io::Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }
+}

@@ -13,6 +13,29 @@ fn test_config_tui_defaults() {
 }
 
 #[test]
+fn test_config_load_from_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file_path = tmp.path().join("config.json");
+    let json_content = r#"{
+        "hide_attached": false,
+        "dir_length": 2,
+        "tui": {
+            "preview": false,
+            "preview_width": 40,
+            "preview_border": "double"
+        }
+    }"#;
+    std::fs::write(&file_path, json_content).unwrap();
+
+    let cfg = Config::load_from_path(&file_path).unwrap();
+    assert!(!cfg.hide_attached);
+    assert_eq!(cfg.dir_length, 2);
+    assert!(!cfg.tui.preview);
+    assert_eq!(cfg.tui.preview_width, 40);
+    assert_eq!(cfg.tui.preview_border, "double");
+}
+
+#[test]
 fn test_app_preview_state_and_scrolling() {
     let items = vec![
         SessionCandidate::new("s1", "/p1", SessionSource::Tmux),
