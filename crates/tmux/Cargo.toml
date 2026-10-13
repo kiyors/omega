@@ -1,0 +1,13 @@
+[package]
+name = "omega-tmux"
+description = "Tmux multiplexer abstraction, CLI client, state parser, and layout engine for Omega"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

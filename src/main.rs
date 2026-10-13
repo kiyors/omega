@@ -7,8 +7,9 @@ use omega::commands::execute_command;
 use omega::event::{Event, EventHandler};
 use omega::ui;
 use omega_config::Config;
-use omega_session::daemon::fetch_candidates_or_fallback;
-use omega_session::{PreviewGenerator, RealTmuxClient, SessionCandidate, TmuxActionRunner};
+use omega_daemon::fetch_candidates_or_fallback;
+use omega_session::{PreviewGenerator, SessionCandidate};
+use omega_tmux::{RealTmuxClient, TmuxActionRunner};
 use std::time::Duration;
 
 fn main() -> Result<()> {

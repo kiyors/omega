@@ -5,13 +5,10 @@ edition.workspace = true
 
 [dependencies]
 omega-config.workspace = true
+omega-tmux.workspace   = true
 serde.workspace        = true
 serde_json.workspace   = true
 walkdir.workspace      = true
-
-[target.'cfg(unix)'.dependencies]
-libc        = "0.2"
-signal-hook = "0.3"
 
 [dev-dependencies]
 tempfile.workspace = true

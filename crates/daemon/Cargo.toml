@@ -1,0 +1,21 @@
+[package]
+name = "omega-daemon"
+description = "Daemon IPC server/client, candidate cache worker, and snapshot manager for Omega"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+omega-config.workspace = true
+omega-session.workspace = true
+omega-tmux.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook = "0.3"
+
+[dev-dependencies]
+tempfile.workspace = true

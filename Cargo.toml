@@ -1,25 +1,8 @@
-[workspace]
-members = [ "crates/session", "crates/search", "crates/config" ]
-
 [workspace.package]
 authors = [ "kiyors <gaurav23617@gmail.com>" ]
 edition = "2024"
 license = "MIT"
 version = "0.1.0"
-
-[workspace.dependencies]
-clap          = { features = [ "derive" ], version = "4.6" }
-color-eyre    = "0.6.5"
-crossterm     = "0.29.0"
-fuzzy-matcher = "0.3"
-omega-config  = { path = "crates/config", version = "0.1.0" }
-omega-search  = { path = "crates/search", version = "0.1.0" }
-omega-session = { path = "crates/session", version = "0.1.0" }
-ratatui       = "0.30.2"
-serde         = { features = [ "derive" ], version = "1.0" }
-serde_json    = "1.0"
-tempfile      = "3"
-walkdir       = "2.5"
 
 [package]
 name              = "omega"
@@ -29,13 +12,34 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[workspace]
+members = [ "crates/session", "crates/search", "crates/config", "crates/tmux", "crates/daemon" ]
+
+[workspace.dependencies]
+clap          = { features = [ "derive" ], version = "4.6" }
+color-eyre    = "0.6.5"
+crossterm     = "0.29.0"
+fuzzy-matcher = "0.3"
+omega-config  = { path = "crates/config", version = "0.1.0" }
+omega-daemon  = { path = "crates/daemon", version = "0.1.0" }
+omega-search  = { path = "crates/search", version = "0.1.0" }
+omega-session = { path = "crates/session", version = "0.1.0" }
+omega-tmux    = { path = "crates/tmux", version = "0.1.0" }
+ratatui       = "0.30.2"
+serde         = { features = [ "derive" ], version = "1.0" }
+serde_json    = "1.0"
+tempfile      = "3"
+walkdir       = "2.5"
+
 [dependencies]
 clap.workspace          = true
 color-eyre.workspace    = true
 crossterm.workspace     = true
 omega-config.workspace  = true
+omega-daemon.workspace  = true
 omega-search.workspace  = true
 omega-session.workspace = true
+omega-tmux.workspace    = true
 ratatui.workspace       = true
 serde_json.workspace    = true
 

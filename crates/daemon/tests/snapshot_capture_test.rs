@@ -1,7 +1,8 @@
-use omega_session::snapshot::{
-    TmuxPaneState, TmuxSessionState, TmuxWindowState, parse_session_state,
+use omega_daemon::SnapshotManager;
+use omega_tmux::{
+    MockTmuxClient, TmuxClient, TmuxPaneState, TmuxSessionState, TmuxWindowState,
+    parse_session_state,
 };
-use omega_session::tmux::{MockTmuxClient, SnapshotManager, TmuxClient};
 use std::path::Path;
 
 #[test]

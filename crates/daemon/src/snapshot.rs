@@ -1,159 +1,11 @@
-//! Session snapshot persistence: schema, capture parsing, and the snapshot store.
-//!
-//! A [`Snapshot`] is a serialized point-in-time record of active tmux
-//! sessions, containing session names, window hierarchies, exact pane
-//! geometric layouts (via native tmux layout strings), and active working
-//! directories. The [`SnapshotStore`] persists snapshots as JSON under
-//! `$XDG_DATA_HOME/omega/snapshots/`, maintaining a rolling window of the
-//! last 10 auto-saves alongside an atomic `latest.json` pointer; explicitly
-//! named snapshots are exempt from rotation.
+//! Session snapshot persistence: schema, snapshot store, and snapshot manager.
 
+use omega_tmux::{CreatedIds, TmuxClient};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-// ---------------------------------------------------------------------------
-// Capture tree (raw tmux state)
-// ---------------------------------------------------------------------------
-
-/// Captured state of a single tmux pane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TmuxPaneState {
-    pub index: u32,
-    pub path: String,
-    /// Running process command (e.g. `nvim`, `zsh`).
-    pub command: String,
-    pub active: bool,
-}
-
-/// Captured state of a single tmux window, including its native layout string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TmuxWindowState {
-    pub index: u32,
-    pub name: String,
-    /// Tmux native checksummed layout string (e.g. `bb62,80x23,0,0,1`).
-    pub layout: String,
-    pub active: bool,
-    pub panes: Vec<TmuxPaneState>,
-}
-
-/// Captured state of a single tmux session with its full window hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TmuxSessionState {
-    pub name: String,
-    pub attached: bool,
-    pub windows: Vec<TmuxWindowState>,
-}
-
-/// Parses raw `tmux list-sessions`, `list-windows -a`, and `list-panes -a -s`
-/// output into a session tree.
-///
-/// Expected tab-separated fields:
-/// - sessions: `#{session_name}\t#{session_attached}`
-/// - windows: `#{session_name}\t#{window_index}\t#{window_name}\t#{window_layout}\t#{window_active}`
-/// - panes: `#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_active}`
-///
-/// Malformed lines and entries referencing unknown sessions or windows are
-/// skipped. Windows are ordered by window index and panes by pane index.
-pub fn parse_session_state(
-    sessions_raw: &str,
-    windows_raw: &str,
-    panes_raw: &str,
-) -> Vec<TmuxSessionState> {
-    let mut sessions: Vec<TmuxSessionState> = Vec::new();
-    let mut session_slots: HashMap<&str, usize> = HashMap::new();
-
-    for line in sessions_raw.lines() {
-        let mut fields = line.splitn(2, '\t');
-        let (Some(name), Some(attached_flag)) = (fields.next(), fields.next()) else {
-            continue;
-        };
-        if name.is_empty() {
-            continue;
-        }
-        let attached = attached_flag == "1";
-        session_slots.insert(name, sessions.len());
-        sessions.push(TmuxSessionState {
-            name: name.to_string(),
-            attached,
-            windows: Vec::new(),
-        });
-    }
-
-    // Maps (session name, window index) -> (session slot, window slot).
-    let mut window_slots: HashMap<(&str, u32), (usize, usize)> = HashMap::new();
-
-    for line in windows_raw.lines() {
-        let fields: Vec<&str> = line.splitn(5, '\t').collect();
-        if fields.len() < 5 {
-            continue;
-        }
-        let (Some(session_name), Some(index)) = (
-            fields.first().copied(),
-            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
-        ) else {
-            continue;
-        };
-        let Some(&session_slot) = session_slots.get(session_name) else {
-            continue;
-        };
-        let name = fields.get(2).copied().unwrap_or_default().to_string();
-        let layout = fields.get(3).copied().unwrap_or_default().to_string();
-        let active = fields.get(4).copied() == Some("1");
-
-        let window_slot = sessions[session_slot].windows.len();
-        sessions[session_slot].windows.push(TmuxWindowState {
-            index,
-            name,
-            layout,
-            active,
-            panes: Vec::new(),
-        });
-        window_slots.insert((session_name, index), (session_slot, window_slot));
-    }
-
-    for line in panes_raw.lines() {
-        let fields: Vec<&str> = line.splitn(6, '\t').collect();
-        if fields.len() < 6 {
-            continue;
-        }
-        let (Some(session_name), Some(window_index), Some(pane_index)) = (
-            fields.first().copied(),
-            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
-            fields.get(2).and_then(|v| v.parse::<u32>().ok()),
-        ) else {
-            continue;
-        };
-        let Some(&(session_slot, window_slot)) = window_slots.get(&(session_name, window_index))
-        else {
-            continue;
-        };
-        let path = fields.get(3).copied().unwrap_or_default().to_string();
-        let command = fields.get(4).copied().unwrap_or_default().to_string();
-        let active = fields.get(5).copied() == Some("1");
-        sessions[session_slot].windows[window_slot]
-            .panes
-            .push(TmuxPaneState {
-                index: pane_index,
-                path,
-                command,
-                active,
-            });
-    }
-
-    // tmux reports windows and panes in index order already; sort defensively.
-    for session in &mut sessions {
-        session.windows.sort_by_key(|w| w.index);
-        for window in &mut session.windows {
-            window.panes.sort_by_key(|p| p.index);
-        }
-    }
-
-    sessions
-}
 
 // ---------------------------------------------------------------------------
 // Snapshot schema
@@ -374,8 +226,6 @@ impl SnapshotStore {
 
         #[cfg(not(unix))]
         {
-            // Non-unix platforms lack symlinks; an atomic rename of a full copy
-            // preserves the "latest is always present" guarantee.
             let tmp_copy = self.base_dir.join(format!("{LATEST_POINTER}.tmp"));
             fs::copy(target_path, &tmp_copy)?;
             fs::rename(&tmp_copy, &latest_path)?;
@@ -466,4 +316,188 @@ pub fn break_down_timestamp(total_secs: u64) -> (u64, u64, u64, u64, u64, u64) {
 
 fn is_leap_year(year: u64) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot Manager & Restore Engine
+// ---------------------------------------------------------------------------
+
+const SHELL_COMMANDS: &[&str] = &["zsh", "bash", "sh", "fish", "dash", "ksh", "nu", "tmux"];
+
+fn is_shell_command(command: &str) -> bool {
+    let binary = command.split_whitespace().next().unwrap_or_default();
+    SHELL_COMMANDS.contains(&binary)
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct RestoreSummary {
+    pub restored: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct SnapshotManager;
+
+impl SnapshotManager {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Captures the live tmux state into a [`Snapshot`].
+    pub fn capture<T: TmuxClient>(&self, tmux: &T) -> io::Result<Snapshot> {
+        let sessions = tmux
+            .capture_state()?
+            .into_iter()
+            .map(|state| {
+                let path = state
+                    .windows
+                    .first()
+                    .and_then(|w| w.panes.first())
+                    .map(|p| PathBuf::from(&p.path))
+                    .unwrap_or_default();
+                let windows = state
+                    .windows
+                    .into_iter()
+                    .map(|w| WindowSnapshot {
+                        index: w.index as usize,
+                        name: w.name,
+                        layout: w.layout,
+                        active: w.active,
+                        panes: w
+                            .panes
+                            .into_iter()
+                            .map(|p| PaneSnapshot {
+                                index: p.index as usize,
+                                path: PathBuf::from(p.path),
+                                command: p.command,
+                                active: p.active,
+                            })
+                            .collect(),
+                    })
+                    .collect();
+                SessionSnapshotRecord {
+                    name: state.name,
+                    path,
+                    windows,
+                }
+            })
+            .collect();
+        Ok(Snapshot::new(sessions))
+    }
+
+    /// Restores sessions from a snapshot.
+    ///
+    /// Non-destructive by default: sessions already running in the live tmux
+    /// server are skipped to protect uncommitted in-memory work. `overwrite`
+    /// forces recreation. `target_session` restricts the restore to a single
+    /// named session (selective restore).
+    pub fn restore<T: TmuxClient>(
+        &self,
+        tmux: &mut T,
+        snapshot: &Snapshot,
+        target_session: Option<&str>,
+        overwrite: bool,
+    ) -> io::Result<RestoreSummary> {
+        let mut summary = RestoreSummary::default();
+
+        for session in &snapshot.sessions {
+            if let Some(target) = target_session
+                && session.name != target
+            {
+                continue;
+            }
+
+            let exists = tmux.has_session(&session.name);
+            if exists && !overwrite {
+                summary.skipped.push(session.name.clone());
+                continue;
+            }
+            if exists && overwrite {
+                tmux.kill_session(&session.name)?;
+            }
+
+            self.restore_session(tmux, session)?;
+            summary.restored.push(session.name.clone());
+        }
+
+        Ok(summary)
+    }
+
+    fn restore_session<T: TmuxClient>(
+        &self,
+        tmux: &mut T,
+        session: &SessionSnapshotRecord,
+    ) -> io::Result<()> {
+        let restorable: Vec<&WindowSnapshot> = session
+            .windows
+            .iter()
+            .filter(|w| !w.panes.is_empty())
+            .collect();
+
+        let Some((first_window, other_windows)) = restorable.split_first() else {
+            // Degenerate snapshot: recreate a bare session at the recorded path.
+            tmux.create_session(&session.name, &session.name, &session.path, None)?;
+            return Ok(());
+        };
+
+        let first_pane = match first_window.panes.first() {
+            Some(pane) => pane,
+            None => return Ok(()),
+        };
+        let created =
+            tmux.create_session(&session.name, &first_window.name, &first_pane.path, None)?;
+        self.rebuild_window(tmux, first_window, &created)?;
+
+        for window in other_windows {
+            let Some(pane) = window.panes.first() else {
+                continue;
+            };
+            let created = tmux.create_window(&session.name, &window.name, &pane.path)?;
+            self.rebuild_window(tmux, window, &created)?;
+        }
+
+        // Focus restoration: select active window and active pane
+        let active_window = restorable
+            .iter()
+            .find(|w| w.active)
+            .or_else(|| restorable.first());
+        if let Some(w) = active_window {
+            let target = format!("{}:{}", session.name, w.index);
+            let _ = tmux.select_window(&target);
+
+            if let Some(p) = w.panes.iter().find(|p| p.active) {
+                let pane_target = format!("{}:{}.{}", session.name, w.index, p.index);
+                let _ = tmux.select_pane(&pane_target);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Re-splits panes, applies the native layout string, and replays pane
+    /// commands for a single restored window.
+    fn rebuild_window<T: TmuxClient>(
+        &self,
+        tmux: &mut T,
+        window: &WindowSnapshot,
+        created: &CreatedIds,
+    ) -> io::Result<()> {
+        let mut pane_ids = vec![created.pane_id.clone()];
+        for pane in window.panes.iter().skip(1) {
+            let pane_id = tmux.split_pane(&created.window_id, &pane.path)?;
+            pane_ids.push(pane_id);
+        }
+
+        if !window.layout.is_empty() {
+            tmux.apply_layout(&created.window_id, &window.layout)?;
+        }
+
+        for (pane, pane_id) in window.panes.iter().zip(pane_ids.iter()) {
+            if !pane.command.is_empty() && !is_shell_command(&pane.command) {
+                tmux.send_keys(pane_id, &pane.command)?;
+            }
+        }
+
+        Ok(())
+    }
 }

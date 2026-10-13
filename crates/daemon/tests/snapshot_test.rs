@@ -1,4 +1,4 @@
-use omega_session::snapshot::{
+use omega_daemon::{
     AUTO_SAVE_PREFIX, LATEST_POINTER, PaneSnapshot, SessionSnapshotRecord, Snapshot, SnapshotStore,
     WindowSnapshot, break_down_timestamp,
 };

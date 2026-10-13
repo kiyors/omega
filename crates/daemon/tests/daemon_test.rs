@@ -1,5 +1,5 @@
 use omega_config::Config;
-use omega_session::daemon::{
+use omega_daemon::{
     AUTOSAVE_INTERVAL, DaemonClient, DaemonServer, autosave_due, fetch_candidates_or_fallback,
 };
 use omega_session::{SessionCandidate, SessionSource};

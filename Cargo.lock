@@ -959,8 +959,10 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "omega-config",
+ "omega-daemon",
  "omega-search",
  "omega-session",
+ "omega-tmux",
  "ratatui",
  "serde_json",
  "tempfile",
@@ -975,6 +977,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "omega-daemon"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omega-config",
+ "omega-session",
+ "omega-tmux",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tempfile",
+]
+
+[[package]]
 name = "omega-search"
 version = "0.1.0"
 dependencies = [
@@ -985,13 +1001,20 @@ dependencies = [
 name = "omega-session"
 version = "0.1.0"
 dependencies = [
- "libc",
  "omega-config",
+ "omega-tmux",
  "serde",
  "serde_json",
- "signal-hook",
  "tempfile",
  "walkdir",
+]
+
+[[package]]
+name = "omega-tmux"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
 ]
 
 [[package]]

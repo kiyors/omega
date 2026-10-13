@@ -1,14 +1,14 @@
 use crate::cli::{Commands, DaemonAction};
 use color_eyre::Result;
 use omega_config::Config;
-use omega_session::daemon::{
-    DaemonServer, daemon_start, daemon_status, daemon_stop, fetch_candidates_or_fallback,
+use omega_daemon::{
+    DaemonServer, SnapshotManager, SnapshotStore, daemon_start, daemon_status, daemon_stop,
+    fetch_candidates_or_fallback,
 };
+use omega_session::SessionSource;
 use omega_session::find_workspace_root;
 use omega_session::naming::NamingPipeline;
-use omega_session::snapshot::SnapshotStore;
-use omega_session::tmux::SnapshotManager;
-use omega_session::{SessionSource, TmuxActionRunner, TmuxClient};
+use omega_tmux::{TmuxActionRunner, TmuxClient};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};

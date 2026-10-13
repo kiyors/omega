@@ -1,5 +1,7 @@
-use omega_session::snapshot::{PaneSnapshot, SessionSnapshotRecord, Snapshot, WindowSnapshot};
-use omega_session::tmux::{MockTmuxClient, SnapshotManager};
+use omega_daemon::{
+    PaneSnapshot, SessionSnapshotRecord, Snapshot, SnapshotManager, WindowSnapshot,
+};
+use omega_tmux::MockTmuxClient;
 use std::path::{Path, PathBuf};
 
 fn window(index: usize, name: &str, layout: &str, panes: Vec<PaneSnapshot>) -> WindowSnapshot {
@@ -215,4 +217,23 @@ fn test_restore_session_without_windows_creates_bare_session() {
     assert_eq!(summary.restored, vec!["bare"]);
     assert_eq!(mock.created_sessions.len(), 1);
     assert_eq!(mock.created_sessions[0].path, PathBuf::from("/repo/bare"));
+}
+
+#[test]
+fn test_restore_preserves_active_window_and_pane_focus() {
+    let mut mock = MockTmuxClient::new();
+    let snapshot = Snapshot {
+        version: 1,
+        created_at: "2026-10-13T07:00:00Z".to_string(),
+        sessions: vec![two_pane_session()],
+    };
+
+    SnapshotManager::new()
+        .restore(&mut mock, &snapshot, None, false)
+        .expect("restore focus");
+
+    assert!(!mock.selected_windows.is_empty());
+    assert_eq!(mock.selected_windows[0], "work:1");
+    assert!(!mock.selected_panes.is_empty());
+    assert_eq!(mock.selected_panes[0], "work:1.1");
 }

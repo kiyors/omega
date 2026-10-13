@@ -1,4 +1,4 @@
-use omega_session::tmux::{MockTmuxClient, TmuxActionRunner};
+use omega_tmux::{MockTmuxClient, TmuxActionRunner};
 use std::path::Path;
 
 #[test]

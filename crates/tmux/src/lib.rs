@@ -1,10 +1,14 @@
-use crate::snapshot::{
-    PaneSnapshot, SessionSnapshotRecord, Snapshot, TmuxSessionState, WindowSnapshot,
-    parse_session_state,
-};
+//! Low-level Tmux multiplexer client, parser, and action runner.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{self, Error};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+// ---------------------------------------------------------------------------
+// Tmux Models
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TmuxSessionRecord {
@@ -21,6 +25,142 @@ pub struct CreatedIds {
     /// tmux pane id of the window's first pane (e.g. `%7`).
     pub pane_id: String,
 }
+
+/// Captured state of a single tmux pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TmuxPaneState {
+    pub index: u32,
+    pub path: String,
+    /// Running process command (e.g. `nvim`, `zsh`).
+    pub command: String,
+    pub active: bool,
+}
+
+/// Captured state of a single tmux window, including its native layout string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TmuxWindowState {
+    pub index: u32,
+    pub name: String,
+    /// Native checksummed layout string (`#{window_layout}`).
+    pub layout: String,
+    pub active: bool,
+    pub panes: Vec<TmuxPaneState>,
+}
+
+/// Captured state of a single tmux session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TmuxSessionState {
+    pub name: String,
+    pub attached: bool,
+    pub windows: Vec<TmuxWindowState>,
+}
+
+// ---------------------------------------------------------------------------
+// Tmux Output Parser
+// ---------------------------------------------------------------------------
+
+/// Parses raw `tmux list-sessions`, `list-windows -a`, and `list-panes -a -s`
+/// output into a session tree.
+pub fn parse_session_state(
+    sessions_raw: &str,
+    windows_raw: &str,
+    panes_raw: &str,
+) -> Vec<TmuxSessionState> {
+    let mut sessions: Vec<TmuxSessionState> = Vec::new();
+    let mut session_slots: HashMap<&str, usize> = HashMap::new();
+
+    for line in sessions_raw.lines() {
+        let mut fields = line.splitn(2, '\t');
+        let (Some(name), Some(attached_flag)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let attached = attached_flag == "1";
+        session_slots.insert(name, sessions.len());
+        sessions.push(TmuxSessionState {
+            name: name.to_string(),
+            attached,
+            windows: Vec::new(),
+        });
+    }
+
+    // Maps (session name, window index) -> (session slot, window slot).
+    let mut window_slots: HashMap<(&str, u32), (usize, usize)> = HashMap::new();
+
+    for line in windows_raw.lines() {
+        let fields: Vec<&str> = line.splitn(5, '\t').collect();
+        if fields.len() < 5 {
+            continue;
+        }
+        let (Some(session_name), Some(index)) = (
+            fields.first().copied(),
+            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
+        ) else {
+            continue;
+        };
+        let Some(&session_slot) = session_slots.get(session_name) else {
+            continue;
+        };
+        let name = fields.get(2).copied().unwrap_or_default().to_string();
+        let layout = fields.get(3).copied().unwrap_or_default().to_string();
+        let active = fields.get(4).copied() == Some("1");
+
+        let window_slot = sessions[session_slot].windows.len();
+        sessions[session_slot].windows.push(TmuxWindowState {
+            index,
+            name,
+            layout,
+            active,
+            panes: Vec::new(),
+        });
+        window_slots.insert((session_name, index), (session_slot, window_slot));
+    }
+
+    for line in panes_raw.lines() {
+        let fields: Vec<&str> = line.splitn(6, '\t').collect();
+        if fields.len() < 6 {
+            continue;
+        }
+        let (Some(session_name), Some(window_index), Some(pane_index)) = (
+            fields.first().copied(),
+            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
+            fields.get(2).and_then(|v| v.parse::<u32>().ok()),
+        ) else {
+            continue;
+        };
+        let Some(&(session_slot, window_slot)) = window_slots.get(&(session_name, window_index))
+        else {
+            continue;
+        };
+        let path = fields.get(3).copied().unwrap_or_default().to_string();
+        let command = fields.get(4).copied().unwrap_or_default().to_string();
+        let active = fields.get(5).copied() == Some("1");
+        sessions[session_slot].windows[window_slot]
+            .panes
+            .push(TmuxPaneState {
+                index: pane_index,
+                path,
+                command,
+                active,
+            });
+    }
+
+    // tmux reports windows and panes in index order already; sort defensively.
+    for session in &mut sessions {
+        session.windows.sort_by_key(|w| w.index);
+        for window in &mut session.windows {
+            window.panes.sort_by_key(|p| p.index);
+        }
+    }
+
+    sessions
+}
+
+// ---------------------------------------------------------------------------
+// Tmux Client Trait
+// ---------------------------------------------------------------------------
 
 pub trait TmuxClient {
     fn is_inside_tmux(&self) -> bool;
@@ -50,6 +190,12 @@ pub trait TmuxClient {
     /// Sends a command line to a pane followed by Enter.
     fn send_keys(&mut self, pane_target: &str, command: &str) -> io::Result<()>;
 
+    /// Selects active window.
+    fn select_window(&mut self, window_target: &str) -> io::Result<()>;
+
+    /// Selects active pane.
+    fn select_pane(&mut self, pane_target: &str) -> io::Result<()>;
+
     fn switch_client(&mut self, target: &str) -> io::Result<()>;
     fn attach_session(&mut self, target: &str) -> io::Result<()>;
     fn kill_session(&mut self, target: &str) -> io::Result<()>;
@@ -60,11 +206,16 @@ pub trait TmuxClient {
     fn capture_state(&self) -> io::Result<Vec<TmuxSessionState>>;
 }
 
-/// Parses `-P -F '#{window_id}\t#{pane_id}'` output from tmux.
-fn parse_created_ids(stdout: &[u8]) -> io::Result<CreatedIds> {
-    let raw = String::from_utf8_lossy(stdout);
-    let line = raw.lines().next().unwrap_or_default();
-    let mut fields = line.splitn(2, '\t');
+fn parse_created_ids(output: &std::process::Output) -> io::Result<CreatedIds> {
+    if !output.status.success() {
+        return Err(Error::other(format!(
+            "tmux command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let line = raw.lines().next().unwrap_or_default().trim();
+    let mut fields = line.split('\t');
     let window_id = fields.next().unwrap_or_default().trim().to_owned();
     let pane_id = fields.next().unwrap_or_default().trim().to_owned();
     if window_id.is_empty() || pane_id.is_empty() {
@@ -74,6 +225,10 @@ fn parse_created_ids(stdout: &[u8]) -> io::Result<CreatedIds> {
     }
     Ok(CreatedIds { window_id, pane_id })
 }
+
+// ---------------------------------------------------------------------------
+// Real Tmux Client
+// ---------------------------------------------------------------------------
 
 #[derive(Default, Debug, Clone)]
 pub struct RealTmuxClient;
@@ -132,7 +287,8 @@ impl TmuxClient for RealTmuxClient {
         let mut cmd = Command::new("tmux");
         cmd.args([
             "new-session",
-            "-ds",
+            "-d",
+            "-s",
             session,
             "-n",
             window_name,
@@ -145,47 +301,40 @@ impl TmuxClient for RealTmuxClient {
         if let Some(c) = command {
             cmd.arg(c);
         }
-
         let output = cmd.output()?;
-        if !output.status.success() {
-            return Err(Error::other(format!(
-                "Failed to create tmux session '{session}'"
-            )));
-        }
-        parse_created_ids(&output.stdout)
+        parse_created_ids(&output)
     }
 
     fn create_window(&mut self, session: &str, name: &str, path: &Path) -> io::Result<CreatedIds> {
+        let path_str = path.to_string_lossy();
         let output = Command::new("tmux")
             .args([
                 "new-window",
+                "-d",
                 "-t",
                 session,
                 "-n",
                 name,
                 "-c",
-                &path.to_string_lossy(),
+                &path_str,
                 "-P",
                 "-F",
                 "#{window_id}\t#{pane_id}",
             ])
             .output()?;
-        if !output.status.success() {
-            return Err(Error::other(format!(
-                "Failed to create window '{name}' in tmux session '{session}'"
-            )));
-        }
-        parse_created_ids(&output.stdout)
+        parse_created_ids(&output)
     }
 
     fn split_pane(&mut self, window_target: &str, path: &Path) -> io::Result<String> {
+        let path_str = path.to_string_lossy();
         let output = Command::new("tmux")
             .args([
                 "split-window",
+                "-d",
                 "-t",
                 window_target,
                 "-c",
-                &path.to_string_lossy(),
+                &path_str,
                 "-P",
                 "-F",
                 "#{pane_id}",
@@ -193,7 +342,8 @@ impl TmuxClient for RealTmuxClient {
             .output()?;
         if !output.status.success() {
             return Err(Error::other(format!(
-                "Failed to split tmux window '{window_target}'"
+                "tmux split-window failed: {}",
+                String::from_utf8_lossy(&output.stderr)
             )));
         }
         let raw = String::from_utf8_lossy(&output.stdout);
@@ -211,9 +361,10 @@ impl TmuxClient for RealTmuxClient {
             .args(["select-layout", "-t", window_target, layout])
             .status()?;
         if !status.success() {
-            return Err(Error::other(format!(
-                "Failed to apply layout to tmux window '{window_target}'"
-            )));
+            // Resilient fallback: if the terminal is smaller than layout proportions, fall back to tiled.
+            let _ = Command::new("tmux")
+                .args(["select-layout", "-t", window_target, "tiled"])
+                .status();
         }
         Ok(())
     }
@@ -230,13 +381,27 @@ impl TmuxClient for RealTmuxClient {
         Ok(())
     }
 
+    fn select_window(&mut self, window_target: &str) -> io::Result<()> {
+        let _ = Command::new("tmux")
+            .args(["select-window", "-t", window_target])
+            .status();
+        Ok(())
+    }
+
+    fn select_pane(&mut self, pane_target: &str) -> io::Result<()> {
+        let _ = Command::new("tmux")
+            .args(["select-pane", "-t", pane_target])
+            .status();
+        Ok(())
+    }
+
     fn switch_client(&mut self, target: &str) -> io::Result<()> {
         let status = Command::new("tmux")
             .args(["switch-client", "-t", target])
             .status()?;
         if !status.success() {
             return Err(Error::other(format!(
-                "Failed to switch tmux client to '{target}'"
+                "Failed to switch to tmux session '{target}'"
             )));
         }
         Ok(())
@@ -326,6 +491,10 @@ impl TmuxClient for RealTmuxClient {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Mock Tmux Client
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatedSessionRecord {
     pub name: String,
@@ -341,16 +510,17 @@ pub struct MockTmuxClient {
     pub sessions: Vec<TmuxSessionRecord>,
     pub switched_to: Option<String>,
     pub attached_to: Option<String>,
-    pub created_sessions: Vec<CreatedSessionRecord>,
     pub killed_sessions: Vec<String>,
     pub switched_last_called: bool,
-    pub captured_panes: std::collections::HashMap<String, String>,
-    /// Fixture returned by `capture_state`.
-    pub snapshot_state: Vec<TmuxSessionState>,
+    pub captured_panes: HashMap<String, String>,
+    pub created_sessions: Vec<CreatedSessionRecord>,
     pub created_windows: Vec<(String, String, PathBuf)>,
     pub split_panes: Vec<(String, PathBuf)>,
     pub applied_layouts: Vec<(String, String)>,
     pub sent_keys: Vec<(String, String)>,
+    pub selected_windows: Vec<String>,
+    pub selected_panes: Vec<String>,
+    pub snapshot_state: Vec<TmuxSessionState>,
 }
 
 impl MockTmuxClient {
@@ -380,22 +550,23 @@ impl TmuxClient for MockTmuxClient {
 
     fn list_sessions(&self) -> io::Result<Vec<TmuxSessionRecord>> {
         if !self.sessions.is_empty() {
-            Ok(self.sessions.clone())
-        } else {
-            Ok(self
-                .existing_sessions
-                .iter()
-                .map(|s| TmuxSessionRecord {
-                    name: s.clone(),
-                    path: PathBuf::from(format!("/path/{}", s)),
-                    attached: false,
-                })
-                .collect())
+            return Ok(self.sessions.clone());
         }
+        let list: Vec<TmuxSessionRecord> = self
+            .existing_sessions
+            .iter()
+            .map(|name| TmuxSessionRecord {
+                name: name.clone(),
+                path: PathBuf::from(format!("/mock/path/{name}")),
+                attached: false,
+            })
+            .collect();
+        Ok(list)
     }
 
     fn has_session(&self, name: &str) -> bool {
         self.existing_sessions.iter().any(|s| s == name)
+            || self.sessions.iter().any(|s| s.name == name)
             || self.created_sessions.iter().any(|s| s.name == name)
     }
 
@@ -445,6 +616,16 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn select_window(&mut self, window_target: &str) -> io::Result<()> {
+        self.selected_windows.push(window_target.to_owned());
+        Ok(())
+    }
+
+    fn select_pane(&mut self, pane_target: &str) -> io::Result<()> {
+        self.selected_panes.push(pane_target.to_owned());
+        Ok(())
+    }
+
     fn switch_client(&mut self, target: &str) -> io::Result<()> {
         self.switched_to = Some(target.to_owned());
         Ok(())
@@ -478,174 +659,9 @@ impl TmuxClient for MockTmuxClient {
     }
 }
 
-/// Pane commands that must not be replayed on restore (spawning a nested
-/// shell inside a restored pane would be harmful).
-const SHELL_COMMANDS: &[&str] = &["zsh", "bash", "sh", "fish", "dash", "ksh", "nu", "tmux"];
-
-fn is_shell_command(command: &str) -> bool {
-    let binary = command.split_whitespace().next().unwrap_or_default();
-    SHELL_COMMANDS.contains(&binary)
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct RestoreSummary {
-    pub restored: Vec<String>,
-    pub skipped: Vec<String>,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct SnapshotManager;
-
-impl SnapshotManager {
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// Captures the live tmux state into a [`Snapshot`].
-    pub fn capture<T: TmuxClient>(&self, tmux: &T) -> io::Result<Snapshot> {
-        let sessions = tmux
-            .capture_state()?
-            .into_iter()
-            .map(|state| {
-                let path = state
-                    .windows
-                    .first()
-                    .and_then(|w| w.panes.first())
-                    .map(|p| PathBuf::from(&p.path))
-                    .unwrap_or_default();
-                let windows = state
-                    .windows
-                    .into_iter()
-                    .map(|w| WindowSnapshot {
-                        index: w.index as usize,
-                        name: w.name,
-                        layout: w.layout,
-                        active: w.active,
-                        panes: w
-                            .panes
-                            .into_iter()
-                            .map(|p| PaneSnapshot {
-                                index: p.index as usize,
-                                path: PathBuf::from(p.path),
-                                command: p.command,
-                                active: p.active,
-                            })
-                            .collect(),
-                    })
-                    .collect();
-                SessionSnapshotRecord {
-                    name: state.name,
-                    path,
-                    windows,
-                }
-            })
-            .collect();
-        Ok(Snapshot::new(sessions))
-    }
-
-    /// Restores sessions from a snapshot.
-    ///
-    /// Non-destructive by default: sessions already running in the live tmux
-    /// server are skipped to protect uncommitted in-memory work. `overwrite`
-    /// forces recreation. `target_session` restricts the restore to a single
-    /// named session (selective restore).
-    pub fn restore<T: TmuxClient>(
-        &self,
-        tmux: &mut T,
-        snapshot: &Snapshot,
-        target_session: Option<&str>,
-        overwrite: bool,
-    ) -> io::Result<RestoreSummary> {
-        let mut summary = RestoreSummary::default();
-
-        for session in &snapshot.sessions {
-            if let Some(target) = target_session
-                && session.name != target
-            {
-                continue;
-            }
-
-            let exists = tmux.has_session(&session.name);
-            if exists && !overwrite {
-                summary.skipped.push(session.name.clone());
-                continue;
-            }
-            if exists && overwrite {
-                tmux.kill_session(&session.name)?;
-            }
-
-            self.restore_session(tmux, session)?;
-            summary.restored.push(session.name.clone());
-        }
-
-        Ok(summary)
-    }
-
-    fn restore_session<T: TmuxClient>(
-        &self,
-        tmux: &mut T,
-        session: &SessionSnapshotRecord,
-    ) -> io::Result<()> {
-        // Windows without panes cannot be reconstructed; the first restorable
-        // window anchors session creation.
-        let restorable: Vec<&WindowSnapshot> = session
-            .windows
-            .iter()
-            .filter(|w| !w.panes.is_empty())
-            .collect();
-
-        let Some((first_window, other_windows)) = restorable.split_first() else {
-            // Degenerate snapshot: recreate a bare session at the recorded path.
-            tmux.create_session(&session.name, &session.name, &session.path, None)?;
-            return Ok(());
-        };
-
-        let first_pane = match first_window.panes.first() {
-            Some(pane) => pane,
-            None => return Ok(()),
-        };
-        let created =
-            tmux.create_session(&session.name, &first_window.name, &first_pane.path, None)?;
-        self.rebuild_window(tmux, first_window, &created)?;
-
-        for window in other_windows {
-            let Some(pane) = window.panes.first() else {
-                continue;
-            };
-            let created = tmux.create_window(&session.name, &window.name, &pane.path)?;
-            self.rebuild_window(tmux, window, &created)?;
-        }
-
-        Ok(())
-    }
-
-    /// Re-splits panes, applies the native layout string, and replays pane
-    /// commands for a single restored window.
-    fn rebuild_window<T: TmuxClient>(
-        &self,
-        tmux: &mut T,
-        window: &WindowSnapshot,
-        created: &CreatedIds,
-    ) -> io::Result<()> {
-        let mut pane_ids = vec![created.pane_id.clone()];
-        for pane in window.panes.iter().skip(1) {
-            let pane_id = tmux.split_pane(&created.window_id, &pane.path)?;
-            pane_ids.push(pane_id);
-        }
-
-        if !window.layout.is_empty() {
-            tmux.apply_layout(&created.window_id, &window.layout)?;
-        }
-
-        for (pane, pane_id) in window.panes.iter().zip(pane_ids.iter()) {
-            if !pane.command.is_empty() && !is_shell_command(&pane.command) {
-                tmux.send_keys(pane_id, &pane.command)?;
-            }
-        }
-
-        Ok(())
-    }
-}
+// ---------------------------------------------------------------------------
+// Tmux Action Runner
+// ---------------------------------------------------------------------------
 
 #[derive(Default, Debug, Clone)]
 pub struct TmuxActionRunner;

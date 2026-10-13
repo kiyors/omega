@@ -1,19 +1,10 @@
-//! Background cache daemon.
-//!
-//! The daemon listens on a Unix domain socket (`$XDG_RUNTIME_DIR/omega.sock`
-//! by default), keeps a hot in-memory candidate cache refreshed by background
-//! polling, periodically auto-saves tmux snapshots, and snapshots state on
-//! graceful termination. CLI and TUI consumers query the socket first and fall
-//! back to direct synchronous scans when the daemon is not running.
-//!
-//! Socket transport is Unix-only; on other platforms `DaemonClient::connect`
-//! always fails and `fetch_candidates_or_fallback` uses the direct scan.
+//! Background cache daemon: line-delimited JSON IPC over Unix domain socket.
 
-use crate::collector::SessionCollector;
-use crate::models::SessionCandidate;
-use crate::snapshot::SnapshotStore;
-use crate::tmux::{RealTmuxClient, SnapshotManager};
+use crate::snapshot::{SnapshotManager, SnapshotStore};
 use omega_config::Config;
+use omega_session::collector::SessionCollector;
+use omega_session::models::SessionCandidate;
+use omega_tmux::RealTmuxClient;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Error, ErrorKind};
@@ -24,26 +15,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Interval between periodic auto-saves (default: 15 minutes).
-pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(15 * 60);
-
-/// Interval between background candidate cache refreshes.
+/// How often the daemon scans the system to refresh candidate sessions.
 pub const CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Poll interval of the non-blocking accept loop.
+/// Periodic auto-save interval: snapshots are written every 15 minutes.
+pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// Polling sleep interval for the non-blocking socket accept loop.
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(15);
 
-/// How long `daemon_start` waits for the spawned server to become reachable.
-const START_READY_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// How long `daemon_stop` waits for the server process to exit.
+/// Timeout waiting for the daemon process to exit on stop.
 const STOP_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Pure auto-save scheduling rule: an auto-save is due once `AUTOSAVE_INTERVAL`
-/// has elapsed since the previous save.
-pub fn autosave_due(last_save: Instant, now: Instant) -> bool {
-    now.saturating_duration_since(last_save) >= AUTOSAVE_INTERVAL
-}
+/// Timeout waiting for the daemon socket to become ready on start.
+const START_READY_TIMEOUT: Duration = Duration::from_secs(3);
+
+// ---------------------------------------------------------------------------
+// IPC Protocol
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonRequest {
@@ -75,12 +64,25 @@ pub fn pid_path(socket_path: &Path) -> PathBuf {
     socket_path.with_extension("pid")
 }
 
+// ---------------------------------------------------------------------------
+// Auto-save logic
+// ---------------------------------------------------------------------------
+
+/// Pure predicate: returns true if the elapsed duration between `last` and `now`
+/// meets or exceeds [`AUTOSAVE_INTERVAL`].
+pub fn autosave_due(last: Instant, now: Instant) -> bool {
+    now.saturating_duration_since(last) >= AUTOSAVE_INTERVAL
+}
+
+// ---------------------------------------------------------------------------
+// Daemon Server
+// ---------------------------------------------------------------------------
+
 pub struct DaemonServer {
     socket_path: PathBuf,
     candidates: Arc<Mutex<Vec<SessionCandidate>>>,
     start_time: Instant,
     config: Config,
-    /// Ensures the graceful-termination snapshot is written exactly once.
     final_saved: AtomicBool,
 }
 
@@ -97,8 +99,6 @@ impl DaemonServer {
         }
     }
 
-    /// Test seam: builds a server around a fixed candidate list without
-    /// touching live system state.
     pub fn new_with_candidates(socket_path: PathBuf, candidates: Vec<SessionCandidate>) -> Self {
         Self {
             socket_path,
@@ -109,9 +109,6 @@ impl DaemonServer {
         }
     }
 
-    /// Resolves the default socket path:
-    /// 1. `$XDG_RUNTIME_DIR/omega.sock`
-    /// 2. `/tmp/omega-<uid>.sock` (fallback)
     pub fn default_socket_path() -> PathBuf {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
             PathBuf::from(runtime_dir).join("omega.sock")
@@ -161,9 +158,34 @@ impl DaemonServer {
         let listener = std::os::unix::net::UnixListener::bind(&self.socket_path)?;
         listener.set_nonblocking(true)?;
 
-        let mut last_scan = Instant::now();
-        let mut last_save = Instant::now();
         let stop_requested = Arc::new(AtomicBool::new(false));
+
+        // Decouple candidate polling from accept loop: background scanning thread
+        let worker_running = Arc::clone(running);
+        let worker_terminate = Arc::clone(terminate);
+        let worker_stop = Arc::clone(&stop_requested);
+        let worker_candidates = Arc::clone(&self.candidates);
+        let worker_config = self.config.clone();
+
+        let worker_handle = std::thread::spawn(move || {
+            let collector = SessionCollector::new();
+            let mut last_scan = Instant::now();
+            while worker_running.load(Ordering::SeqCst)
+                && !worker_terminate.load(Ordering::SeqCst)
+                && !worker_stop.load(Ordering::SeqCst)
+            {
+                std::thread::sleep(Duration::from_millis(100));
+                if last_scan.elapsed() >= CACHE_REFRESH_INTERVAL {
+                    let fresh = collector.collect_from_system(&worker_config);
+                    if let Ok(mut lock) = worker_candidates.lock() {
+                        *lock = fresh;
+                    }
+                    last_scan = Instant::now();
+                }
+            }
+        });
+
+        let mut last_save = Instant::now();
 
         while running.load(Ordering::SeqCst)
             && !stop_requested.load(Ordering::SeqCst)
@@ -189,15 +211,11 @@ impl DaemonServer {
                     std::thread::sleep(ACCEPT_POLL_INTERVAL);
                 }
                 Err(e) => {
+                    stop_requested.store(true, Ordering::SeqCst);
+                    let _ = worker_handle.join();
                     let _ = fs::remove_file(&self.socket_path);
                     return Err(e);
                 }
-            }
-
-            // Periodic candidate cache refresh
-            if last_scan.elapsed() >= CACHE_REFRESH_INTERVAL {
-                self.refresh_candidates();
-                last_scan = Instant::now();
             }
 
             // Periodic auto-save
@@ -208,6 +226,8 @@ impl DaemonServer {
             }
         }
 
+        stop_requested.store(true, Ordering::SeqCst);
+        let _ = worker_handle.join();
         let _ = fs::remove_file(&self.socket_path);
         Ok(())
     }
@@ -228,8 +248,8 @@ impl DaemonServer {
         running: &Arc<AtomicBool>,
     ) -> io::Result<()> {
         stream.set_nonblocking(false)?;
-        // Bound idle clients so a silent connection cannot stall indefinitely.
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut writer = stream;
         let mut line = String::new();
@@ -310,14 +330,6 @@ impl DaemonServer {
         }
     }
 
-    fn refresh_candidates(&self) {
-        let collector = SessionCollector::new();
-        let fresh = collector.collect_from_system(&self.config);
-        if let Ok(mut lock) = self.candidates.lock() {
-            *lock = fresh;
-        }
-    }
-
     fn save_snapshot_now(&self, tag: Option<&str>) -> io::Result<PathBuf> {
         Self::save_snapshot_direct(tag)
     }
@@ -327,6 +339,10 @@ impl DaemonServer {
         let tmux = RealTmuxClient;
         let manager = SnapshotManager::new();
         let snap = manager.capture(&tmux)?;
+        if tag.is_none() && snap.sessions.is_empty() {
+            // Auto-save protection: avoid polluting store with empty snapshots
+            return Ok(PathBuf::new());
+        }
         store.save_snapshot(&snap, tag)
     }
 }
@@ -343,8 +359,6 @@ pub struct DaemonClient {
 
 #[cfg(unix)]
 impl DaemonClient {
-    /// Attempts to connect to the daemon socket. Returns None if the daemon is
-    /// not reachable (stopped, or a stale socket file).
     pub fn connect(socket_path: Option<&Path>) -> Option<Self> {
         let path = match socket_path {
             Some(p) => p.to_path_buf(),
@@ -460,8 +474,6 @@ pub fn fetch_candidates_or_fallback(
 // Daemon lifecycle (start / stop / status)
 // ---------------------------------------------------------------------------
 
-/// Starts the background daemon, spawning a detached `omega daemon serve`
-/// process. Returns the daemon pid. Succeeds immediately if already running.
 #[cfg(unix)]
 pub fn daemon_start(socket_path: &Path, serve_args: &[&str]) -> io::Result<u32> {
     if let Ok(status) = ping_socket(socket_path) {
@@ -522,8 +534,6 @@ pub fn daemon_start(_socket_path: &Path, _serve_args: &[&str]) -> io::Result<u32
     Err(Error::other("Daemon is only supported on Unix platforms"))
 }
 
-/// Stops the background daemon. The server writes a final snapshot before
-/// exiting. Succeeds if the daemon is already stopped.
 #[cfg(unix)]
 pub fn daemon_stop(socket_path: &Path) -> io::Result<()> {
     let pid = read_pid(socket_path);
@@ -552,7 +562,6 @@ pub fn daemon_stop(_socket_path: &Path) -> io::Result<()> {
     Err(Error::other("Daemon is only supported on Unix platforms"))
 }
 
-/// Returns the live daemon status, or None when the daemon is not reachable.
 pub fn daemon_status(socket_path: &Path) -> Option<DaemonStatus> {
     #[cfg(unix)]
     {
@@ -612,8 +621,6 @@ fn wait_for_exit(pid: u32, timeout: Duration) {
     }
 }
 
-/// Registers SIGTERM/SIGINT/SIGHUP into a shared flag so the serve loop can
-/// shut down gracefully (with a final snapshot) on termination signals.
 #[cfg(unix)]
 fn register_termination_signals() -> io::Result<Arc<AtomicBool>> {
     let flag = Arc::new(AtomicBool::new(false));
