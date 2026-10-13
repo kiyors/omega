@@ -26,6 +26,7 @@ omega/
 │   ├── commands.rs            # Headless CLI command execution handlers (connect, clone, etc.)
 │   ├── doctor.rs              # System diagnostics & health check
 │   ├── event.rs               # Event polling loop (crossterm keyboard/tick events)
+│   ├── init.rs                # Shell and multiplexer integration script generation (Zsh, Bash, Fish, Tmux)
 │   └── lib.rs                 # Workspace library exports & re-exports
 
 ├── tests/                     # Integration test suites & end-to-end scenarios
@@ -108,30 +109,31 @@ Omega operates as an event-driven terminal application that reads active environ
   - `main.rs`: Installs panic hooks (`color-eyre`), configures raw mode, drives the main event loop, and coordinates the asynchronous debounced preview worker thread.
   - `app.rs`: Holds active state (`items`, `filtered`, `query`, `selected`, `preview_enabled`, `preview_scroll`, `preview_content`). Computes query updates and preview scrolling.
   - `ansi.rs`: Zero-allocation parser translating ANSI SGR color/style escape codes into styled Ratatui `Text` spans.
-  - `cli.rs`: Clap CLI parser declaring subcommands (`connect`, `list`, `kill`, `last`, `root`, `mkdir`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`).
-  - `commands.rs`: Headless CLI command execution handlers (`connect`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`, etc.).
+  - `cli.rs`: Clap CLI parser declaring subcommands (`window`, `scratch`, `init`, `connect`, `list`, `kill`, `last`, `root`, `mkdir`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`).
+  - `commands.rs`: Headless and interactive CLI command execution handlers (`window`, `scratch`, `init`, `connect`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`, etc.).
   - `doctor.rs`: System dependency diagnostic engine validating `tmux`, `git`, `zoxide`, daemon socket health, and `init.lua` validity.
   - `event.rs`: Asynchronous/polling event channel delivering tick intervals and keypresses.
+  - `init.rs`: Self-contained shell integration scripts with clean TTY allocation (`exec < /dev/tty`), Alt+s ZLE/Readline widgets, and canonical tmux keybinding outputs.
   - `ui.rs`: Two-pane Ratatui layout engine: candidate list on the left, live debounced preview on the right (55% width, auto-collapsing below 100 columns).
 
 ### 3.2. Tmux Multiplexer Subsystem (`crates/tmux` / `omega-tmux`)
 
-- **Primary Responsibility**: Owns the low-level Tmux command abstraction, raw tmux output parsing, native layout management, action dispatch (`connect`, `kill`, `last`), and test mock client implementations.
+- **Primary Responsibility**: Owns the low-level Tmux command abstraction, raw tmux output parsing, native layout management, action dispatch (`connect`, `switch_window`, `scratchpad`, `kill`, `last`), and test mock client implementations.
 - **Key Types & Functions**:
-  - `TmuxClient`: Core trait abstracting tmux interactions (`create_session`, `create_window`, `split_pane`, `apply_layout`, `select_window`, `select_pane`, `switch_client`, `attach_session`, `kill_session`, `capture_pane`, `capture_state`).
-  - `RealTmuxClient`: Zero-cost production multiplexer client invoking `std::process::Command` without shell escaping vulnerabilities. Includes resilient `tiled` layout fallback.
-  - `MockTmuxClient`: Deterministic mock implementation recording session creation, window splitting, layout application, and active selections for unit testing.
+  - `TmuxClient`: Core trait abstracting tmux interactions (`create_session`, `create_window`, `split_pane`, `apply_layout`, `select_window`, `select_pane`, `switch_client`, `attach_session`, `kill_session`, `capture_pane`, `list_windows_raw`, `display_popup`, `capture_state`).
+  - `RealTmuxClient`: Zero-cost production multiplexer client invoking `std::process::Command` without shell escaping vulnerabilities. Includes resilient `tiled` layout fallback and centered `display-popup` invocation.
+  - `MockTmuxClient`: Deterministic mock implementation recording session creation, window splitting, layout application, popup spawning, and active selections for unit testing.
   - `parse_session_state`: Parser transforming tab-separated `list-sessions`, `list-windows`, and `list-panes` streams into structured hierarchical state models (`TmuxSessionState`, `TmuxWindowState`, `TmuxPaneState`).
-  - `TmuxActionRunner`: Coordinates high-level connection handoffs, switching inside tmux vs. attaching outside tmux.
+  - `TmuxActionRunner`: Coordinates high-level connection handoffs, window switching, floating scratchpad toggling, and switching inside tmux vs. attaching outside tmux.
 
 ### 3.3. Session Discovery & Domain Engine (`crates/session` / `omega-session`)
 
-- **Primary Responsibility**: Discovers navigable destinations across tmux, git repositories, linked worktrees, zoxide, and configuration aliases; provides canonical naming, deduplication, and context-aware preview text. 100% OS-agnostic (zero C/POSIX dependencies).
+- **Primary Responsibility**: Discovers navigable destinations across tmux, active tmux windows, git repositories, linked worktrees, zoxide, and configuration aliases; provides canonical naming, deduplication, and context-aware preview text. 100% OS-agnostic (zero C/POSIX dependencies).
 - **Key Modules**:
-  - `discovery.rs`: Multi-source candidate discovery and recursive `.git` worktree pointer/admin inspection.
+  - `discovery.rs`: Multi-source candidate discovery, active tmux window parsing (`parse_tmux_window_candidates`), and recursive `.git` worktree pointer/admin inspection.
   - `naming.rs`: Deterministic tmux session name resolution, character sanitization, and `<repo>--<sanitized-branch>` worktree normalization.
   - `collector.rs`: High-performance deduplication (`SessionCollector`) merging candidates across sources, prioritizing active tmux sessions while inheriting user aliases and icons.
-  - `preview.rs`: Context-aware preview provider (`PreviewGenerator`) extracting live `tmux capture-pane`, `git status -s` + recent commit log, or directory tree listings.
+  - `preview.rs`: Context-aware preview provider (`PreviewGenerator`) extracting live `tmux capture-pane` (for sessions and windows), `git status -s` + recent commit log, or directory tree listings.
 - **Isolation Invariant**: Operates independently of platform-specific Unix IPC or signal handling.
 
 ### 3.4. Persistence & Cache Daemon Subsystem (`crates/daemon` / `omega-daemon`)
@@ -251,7 +253,7 @@ Omega operates as an event-driven terminal application that reads active environ
 2. **Background Async Scanner**: Offload filesystem walks to background worker threads or Rayon iterators to ensure zero frame drops during initial launch.
 3. **Daemon / Persistent Cache**: Completed in Phase 3. Background Unix domain socket cache daemon with 15-minute rolling snapshot persistence, layout fidelity reconstruction, and non-destructive restore.
 4. **Extensibility & Polish**: Completed in Phase 4. Embedded Lua 5.4 configuration engine (`init.lua`), plugins and hooks, startup window/pane layouts, wildcard matching, `omega doctor`, shell completions, Homebrew formula, and Nix flake package outputs.
-5. **Multiplexer Mastery & Workflow Consolidation**: Phase 5. Native tmux window navigation (`omega window`, `:w`), persistent floating scratchpad session (`omega scratch`), shell/multiplexer integrations (`omega init`), and embedded Catppuccin semantic theming.
+5. **Multiplexer Mastery & Workflow Consolidation**: Completed in Phase 5. Native tmux window navigation (`omega window`, `:w`), persistent floating scratchpad session (`omega scratch`), shell/multiplexer integrations (`omega init`), and embedded Catppuccin semantic theming.
 
 ---
 

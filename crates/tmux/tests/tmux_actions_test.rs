@@ -110,3 +110,62 @@ fn test_rename_session() {
         Some(&(None, "active-renamed".to_string()))
     );
 }
+
+#[test]
+fn test_switch_window_inside_tmux() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = true;
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.switch_window(&mut mock, "omega:editor");
+
+    assert!(result.is_ok());
+    assert_eq!(mock.selected_windows, vec!["omega:editor"]);
+    assert_eq!(mock.switched_to.as_deref(), Some("omega:editor"));
+    assert_eq!(mock.attached_to, None);
+}
+
+#[test]
+fn test_switch_window_outside_tmux() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = false;
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.switch_window(&mut mock, "omega:editor");
+
+    assert!(result.is_ok());
+    assert_eq!(mock.attached_to.as_deref(), Some("omega:editor"));
+    assert_eq!(mock.switched_to, None);
+}
+
+#[test]
+fn test_scratchpad_inside_tmux() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = true;
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.scratchpad(&mut mock, "scratch");
+
+    assert!(result.is_ok());
+    assert_eq!(
+        mock.popups,
+        vec![(
+            "80%".to_string(),
+            "80%".to_string(),
+            "tmux new-session -A -s scratch".to_string(),
+        )]
+    );
+}
+
+#[test]
+fn test_scratchpad_outside_tmux() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = false;
+    mock.existing_sessions.push("custom-scratch".to_string());
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.scratchpad(&mut mock, "custom-scratch");
+
+    assert!(result.is_ok());
+    assert_eq!(mock.attached_to.as_deref(), Some("custom-scratch"));
+}

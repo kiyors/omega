@@ -183,6 +183,9 @@ pub fn render(frame: &mut Frame, app: &App) {
                     SessionSource::Tmux => {
                         Span::styled(" [tmux]  ", Style::default().fg(theme.badge_tmux))
                     }
+                    SessionSource::Window => {
+                        Span::styled(" [win]   ", Style::default().fg(theme.badge_tmux))
+                    }
                     SessionSource::Git => {
                         Span::styled(" [git]   ", Style::default().fg(theme.badge_git))
                     }

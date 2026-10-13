@@ -18,17 +18,39 @@ fn main() -> Result<()> {
 
     let mut tmux_client = RealTmuxClient;
 
-    if let Some(cmd) = cli.command {
-        return execute_command_with_engine(cmd, &mut tmux_client, &config, lua_engine.as_ref());
-    }
+    let (is_window_mode, initial_query) = match cli.command {
+        Some(omega::cli::Commands::Window { query }) => {
+            let initial = if query.is_empty() {
+                None
+            } else {
+                Some(query.join(" "))
+            };
+            (true, initial)
+        }
+        Some(cmd) => {
+            return execute_command_with_engine(
+                cmd,
+                &mut tmux_client,
+                &config,
+                lua_engine.as_ref(),
+            );
+        }
+        None => {
+            let initial = if cli.query.is_empty() {
+                None
+            } else {
+                Some(cli.query.join(" "))
+            };
+            (false, initial)
+        }
+    };
 
     // Launch interactive TUI picker
-    let sessions = harvest_and_sort_candidates(&config, lua_engine.as_ref());
-
-    let initial_query = if cli.query.is_empty() {
-        None
+    let sessions = if is_window_mode {
+        let raw = tmux_client.list_windows_raw().unwrap_or_default();
+        omega_session::discovery::parse_tmux_window_candidates(&raw)
     } else {
-        Some(cli.query.join(" "))
+        harvest_and_sort_candidates(&config, lua_engine.as_ref())
     };
 
     let mut app = App::new(sessions, initial_query);
@@ -214,14 +236,19 @@ fn main() -> Result<()> {
     ratatui::restore();
 
     if let Some(target) = chosen_session {
-        smart_connect(
-            &mut tmux_client,
-            &target.name,
-            &target.path,
-            None,
-            &config,
-            lua_engine.as_ref(),
-        )?;
+        if target.source == SessionSource::Window {
+            let runner = omega_tmux::TmuxActionRunner::new();
+            runner.switch_window(&mut tmux_client, &target.name)?;
+        } else {
+            smart_connect(
+                &mut tmux_client,
+                &target.name,
+                &target.path,
+                None,
+                &config,
+                lua_engine.as_ref(),
+            )?;
+        }
     }
 
     Ok(())

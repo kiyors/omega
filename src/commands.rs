@@ -80,6 +80,22 @@ pub fn execute_command_with_engine<T: TmuxClient>(
     let namer = NamingPipeline::new();
 
     match command {
+        Commands::Window { query } => {
+            let query_str = query.join(" ");
+            let raw = tmux.list_windows_raw().unwrap_or_default();
+            let windows = omega_session::discovery::parse_tmux_window_candidates(&raw);
+            if let Some(target) = windows.iter().find(|w| w.name.contains(&query_str)) {
+                runner.switch_window(tmux, &target.name)?;
+            } else if let Some(first) = windows.first() {
+                runner.switch_window(tmux, &first.name)?;
+            }
+        }
+
+        Commands::Scratch { name } => {
+            let target = name.as_deref().unwrap_or("scratch");
+            runner.scratchpad(tmux, target)?;
+        }
+
         Commands::Connect {
             target,
             switch: _,
@@ -91,6 +107,13 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             let matched = candidates
                 .iter()
                 .find(|c| c.name == target || c.alias.as_deref() == Some(&target));
+
+            if let Some(cand) = matched
+                && cand.source == SessionSource::Window
+            {
+                runner.switch_window(tmux, &cand.name)?;
+                return Ok(());
+            }
 
             let (session_name, session_path) = match matched {
                 Some(cand) => (cand.name.clone(), cand.path.clone()),
@@ -343,6 +366,11 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             use clap::CommandFactory;
             let mut cmd = crate::cli::Cli::command();
             clap_complete::generate(shell, &mut cmd, "omega", &mut std::io::stdout());
+        }
+
+        Commands::Init { shell, tmux } => {
+            let script = crate::init::generate_init_script(shell, tmux);
+            print!("{script}");
         }
     }
 

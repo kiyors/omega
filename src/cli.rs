@@ -18,6 +18,20 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Commands {
+    /// Launches interactive picker filtering across active tmux windows
+    Window {
+        /// Initial query for window picker
+        #[arg(trailing_var_arg = true)]
+        query: Vec<String>,
+    },
+
+    /// Toggles a persistent floating scratchpad session inside a tmux popup
+    Scratch {
+        /// Optional scratchpad session name (defaults to "scratch")
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+
     /// Smart connect to a workspace or session
     Connect {
         /// Target session name, path, or alias
@@ -136,6 +150,25 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+
+    /// Emits shell integration functions, ZLE widgets, and tmux keybindings
+    Init {
+        /// Target shell or environment
+        #[arg(value_enum)]
+        shell: ShellTarget,
+
+        /// Include tmux keybindings in output
+        #[arg(long)]
+        tmux: bool,
+    },
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellTarget {
+    Zsh,
+    Bash,
+    Fish,
+    Tmux,
 }
 
 #[derive(Subcommand, Debug, PartialEq, Eq, Clone)]

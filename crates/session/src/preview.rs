@@ -18,12 +18,17 @@ impl PreviewGenerator {
     /// - Directories: Compact directory tree listing
     pub fn generate<T: TmuxClient>(&self, candidate: &SessionCandidate, tmux: &T) -> String {
         match candidate.source {
-            SessionSource::Tmux => {
+            SessionSource::Tmux | SessionSource::Window => {
                 let raw = tmux.capture_pane(&candidate.name).unwrap_or_else(|e| {
                     format!("Error capturing tmux pane for '{}': {}", candidate.name, e)
                 });
                 if raw.trim().is_empty() {
-                    "[Session active - empty terminal pane]".to_string()
+                    let kind = if candidate.source == SessionSource::Window {
+                        "Window"
+                    } else {
+                        "Session"
+                    };
+                    format!("[{kind} active - empty terminal pane]")
                 } else {
                     raw
                 }

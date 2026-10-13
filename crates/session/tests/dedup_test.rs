@@ -128,6 +128,16 @@ fn test_sigil_matching_precision() {
     assert_eq!(SessionSource::from_sigil(":today"), None);
 
     assert_eq!(
+        SessionSource::from_sigil(":w"),
+        Some((SessionSource::Window, ""))
+    );
+    assert_eq!(
+        SessionSource::from_sigil(":w my-win"),
+        Some((SessionSource::Window, "my-win"))
+    );
+    assert_eq!(SessionSource::from_sigil(":window"), None);
+
+    assert_eq!(
         SessionSource::from_sigil(":g"),
         Some((SessionSource::Git, ""))
     );

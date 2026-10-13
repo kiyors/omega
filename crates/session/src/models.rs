@@ -5,17 +5,19 @@ use std::path::PathBuf;
 #[serde(rename_all = "lowercase")]
 pub enum SessionSource {
     Tmux = 0,
-    Alias = 1,
-    Config = 2,
-    Git = 3,
-    Zoxide = 4,
-    Custom = 5,
+    Window = 1,
+    Alias = 2,
+    Config = 3,
+    Git = 4,
+    Zoxide = 5,
+    Custom = 6,
 }
 
 impl SessionSource {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Tmux => "tmux",
+            Self::Window => "window",
             Self::Alias => "alias",
             Self::Config => "config",
             Self::Git => "git",
@@ -27,17 +29,19 @@ impl SessionSource {
     pub fn priority(&self) -> u8 {
         match self {
             Self::Tmux => 0,
-            Self::Alias => 1,
-            Self::Config => 2,
-            Self::Git => 3,
-            Self::Zoxide => 4,
-            Self::Custom => 5,
+            Self::Window => 1,
+            Self::Alias => 2,
+            Self::Config => 3,
+            Self::Git => 4,
+            Self::Zoxide => 5,
+            Self::Custom => 6,
         }
     }
 
     pub fn sigil_prefix(&self) -> &'static str {
         match self {
             Self::Tmux => ":t ",
+            Self::Window => ":w ",
             Self::Alias => "@",
             Self::Config => "",
             Self::Git => ":g ",
@@ -49,12 +53,17 @@ impl SessionSource {
     /// Matches and strips a leading interactive sigil prefix:
     /// - `@<query>` for aliases
     /// - `:t` or `:t <query>` for tmux
+    /// - `:w` or `:w <query>` for tmux windows
     /// - `:g` or `:g <query>` for git
     pub fn from_sigil(query: &str) -> Option<(Self, &str)> {
         if query == ":t" {
             Some((Self::Tmux, ""))
         } else if let Some(rest) = query.strip_prefix(":t ") {
             Some((Self::Tmux, rest.trim_start()))
+        } else if query == ":w" {
+            Some((Self::Window, ""))
+        } else if let Some(rest) = query.strip_prefix(":w ") {
+            Some((Self::Window, rest.trim_start()))
         } else if query == ":g" {
             Some((Self::Git, ""))
         } else if let Some(rest) = query.strip_prefix(":g ") {

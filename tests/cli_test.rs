@@ -116,3 +116,42 @@ fn test_cli_parse_rename() {
         other => panic!("Unexpected command: {:?}", other),
     }
 }
+
+#[test]
+fn test_cli_parse_window() {
+    let args = vec!["omega", "window", "editor"];
+    let cli = Cli::try_parse_from(args).unwrap();
+
+    match cli.command {
+        Some(Commands::Window { query }) => {
+            assert_eq!(query, vec!["editor"]);
+        }
+        other => panic!("Unexpected command: {:?}", other),
+    }
+}
+
+#[test]
+fn test_cli_parse_scratch_default() {
+    let args = vec!["omega", "scratch"];
+    let cli = Cli::try_parse_from(args).unwrap();
+
+    match cli.command {
+        Some(Commands::Scratch { name }) => {
+            assert_eq!(name, None);
+        }
+        other => panic!("Unexpected command: {:?}", other),
+    }
+}
+
+#[test]
+fn test_cli_parse_scratch_named() {
+    let args = vec!["omega", "scratch", "--name", "notes"];
+    let cli = Cli::try_parse_from(args).unwrap();
+
+    match cli.command {
+        Some(Commands::Scratch { name }) => {
+            assert_eq!(name.as_deref(), Some("notes"));
+        }
+        other => panic!("Unexpected command: {:?}", other),
+    }
+}

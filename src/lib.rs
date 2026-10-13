@@ -6,3 +6,4 @@ pub mod cli;
 pub mod commands;
 pub mod doctor;
 pub mod event;
+pub mod init;

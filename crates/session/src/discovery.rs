@@ -101,6 +101,34 @@ pub fn parse_tmux_windows(raw: &str) -> Vec<TmuxWindowInfo> {
     windows
 }
 
+/// Parses `tmux list-windows -a` format:
+/// `#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}`
+pub fn parse_tmux_window_candidates(raw: &str) -> Vec<SessionCandidate> {
+    let mut candidates = Vec::new();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let mut parts = trimmed.split('\t');
+        let (Some(session_name), Some(window_name), Some(path_str), Some(active_str)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+
+        let target_name = format!("{session_name}:{window_name}");
+        let path = PathBuf::from(path_str);
+        let mut candidate = SessionCandidate::new(target_name, path, SessionSource::Window);
+        candidate.attached = active_str == "1";
+        candidates.push(candidate);
+    }
+
+    candidates
+}
+
 /// Discovers Git repository roots and linked worktrees by detecting `.git` entries.
 pub fn scan_git_repositories(roots: &[PathBuf], max_depth: usize) -> Vec<SessionCandidate> {
     let mut candidates = Vec::new();
