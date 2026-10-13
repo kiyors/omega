@@ -1043,7 +1043,6 @@ dependencies = [
  "omega-config",
  "omega-daemon",
  "omega-lua",
- "omega-search",
  "omega-session",
  "omega-tmux",
  "omega-ui",

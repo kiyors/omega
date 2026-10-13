@@ -44,7 +44,6 @@ crossterm.workspace     = true
 omega-config.workspace  = true
 omega-daemon.workspace  = true
 omega-lua.workspace     = true
-omega-search.workspace  = true
 omega-session.workspace = true
 omega-tmux.workspace    = true
 omega-ui.workspace      = true
