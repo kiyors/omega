@@ -91,12 +91,25 @@ fn test_latest_pointer_resolves_to_newest_auto_save() {
         .expect("second save");
 
     let latest = tmp.path().join(LATEST_POINTER);
-    let resolved = std::fs::read_link(&latest).unwrap_or_else(|_| latest.clone());
-    assert_eq!(
-        resolved.file_name(),
-        second.file_name(),
-        "latest.json must atomically point at the newest auto-save"
-    );
+    #[cfg(unix)]
+    {
+        let resolved = std::fs::read_link(&latest).unwrap_or_else(|_| latest.clone());
+        assert_eq!(
+            resolved.file_name(),
+            second.file_name(),
+            "latest.json must atomically point at the newest auto-save"
+        );
+    }
+    #[cfg(not(unix))]
+    {
+        assert!(latest.exists(), "latest.json must exist");
+        let loaded = store.load_snapshot(None).expect("load latest");
+        assert_eq!(
+            loaded,
+            sample_snapshot("second"),
+            "latest.json must resolve to the newest auto-save"
+        );
+    }
 }
 
 #[test]

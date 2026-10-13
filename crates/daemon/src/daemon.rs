@@ -7,7 +7,9 @@ use omega_session::models::SessionCandidate;
 use omega_tmux::RealTmuxClient;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, Error, ErrorKind};
+#[cfg(unix)]
+use std::io::ErrorKind;
+use std::io::{self, Error};
 #[cfg(unix)]
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -22,12 +24,15 @@ pub const CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Polling sleep interval for the non-blocking socket accept loop.
+#[cfg(unix)]
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Timeout waiting for the daemon process to exit on stop.
+#[cfg(unix)]
 const STOP_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Timeout waiting for the daemon socket to become ready on start.
+#[cfg(unix)]
 const START_READY_TIMEOUT: Duration = Duration::from_secs(3);
 
 // ---------------------------------------------------------------------------
@@ -80,11 +85,15 @@ pub fn autosave_due(last: Instant, now: Instant) -> bool {
 
 pub struct DaemonServer {
     socket_path: PathBuf,
+    #[allow(dead_code)]
     candidates: Arc<RwLock<Vec<SessionCandidate>>>,
+    #[allow(dead_code)]
     start_time: Instant,
+    #[allow(dead_code)]
     config: Config,
     final_saved: AtomicBool,
     /// Ensures the tmux lifecycle hooks are installed at most once.
+    #[allow(dead_code)]
     lifecycle_hooks_installed: AtomicBool,
 }
 
