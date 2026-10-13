@@ -27,7 +27,7 @@ impl SessionCollector {
         candidates: Vec<SessionCandidate>,
         hide_attached: bool,
     ) -> Vec<SessionCandidate> {
-        let mut key_to_index: HashMap<DedupKey, usize> = HashMap::new();
+        let mut key_to_index: HashMap<DedupKey, usize> = HashMap::with_capacity(candidates.len());
         let mut result: Vec<SessionCandidate> = Vec::with_capacity(candidates.len());
 
         for mut candidate in candidates {

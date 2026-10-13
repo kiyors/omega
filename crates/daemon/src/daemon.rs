@@ -648,6 +648,7 @@ fn remove_lifecycle_hooks() {
     }
 }
 
+#[cfg(unix)]
 fn read_pid(socket_path: &Path) -> Option<u32> {
     fs::read_to_string(pid_path(socket_path))
         .ok()?
@@ -661,12 +662,6 @@ fn process_alive(pid: u32) -> bool {
     // SAFETY: kill(pid, 0) performs an existence check without sending a signal.
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
     result == 0
-}
-
-#[cfg(not(unix))]
-fn process_alive(pid: u32) -> bool {
-    let _ = pid;
-    false
 }
 
 #[cfg(unix)]

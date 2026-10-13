@@ -1,9 +1,12 @@
 use omega_config::Config;
-use omega_daemon::{
-    AUTOSAVE_INTERVAL, DaemonClient, DaemonServer, autosave_due, fetch_candidates_or_fallback,
-};
+#[cfg(unix)]
+use omega_daemon::DaemonServer;
+use omega_daemon::{AUTOSAVE_INTERVAL, DaemonClient, autosave_due, fetch_candidates_or_fallback};
+#[cfg(unix)]
 use omega_session::{SessionCandidate, SessionSource};
+#[cfg(unix)]
 use std::sync::Arc;
+#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tempfile::tempdir;

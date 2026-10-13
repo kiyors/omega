@@ -30,9 +30,11 @@ fn test_benchmark_candidate_aggregation_1000() {
     let duration = start.elapsed();
 
     assert_eq!(result.len(), 1000);
+    let max_ms = if cfg!(windows) { 60 } else { 30 };
     assert!(
-        duration.as_millis() < 30,
-        "Canonical deduplication of 1,000 real filesystem directories took {:?}, expected < 30ms",
-        duration
+        duration.as_millis() < max_ms,
+        "Canonical deduplication of 1,000 real filesystem directories took {:?}, expected < {}ms",
+        duration,
+        max_ms
     );
 }
