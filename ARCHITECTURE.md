@@ -248,6 +248,7 @@ Omega operates as an event-driven terminal application that reads active environ
 2. **Background Async Scanner**: Offload filesystem walks to background worker threads or Rayon iterators to ensure zero frame drops during initial launch.
 3. **Daemon / Persistent Cache**: Completed in Phase 3. Background Unix domain socket cache daemon with 15-minute rolling snapshot persistence, layout fidelity reconstruction, and non-destructive restore.
 4. **Extensibility & Polish**: Completed in Phase 4. Embedded Lua 5.4 configuration engine (`init.lua`), plugins and hooks, startup window/pane layouts, wildcard matching, `omega doctor`, shell completions, Homebrew formula, and Nix flake package outputs.
+5. **Multiplexer Mastery & Workflow Consolidation**: Phase 5. Native tmux window navigation (`omega window`, `:w`), persistent floating scratchpad session (`omega scratch`), shell/multiplexer integrations (`omega init`), and embedded Catppuccin semantic theming.
 
 ---
 
