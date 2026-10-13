@@ -1042,6 +1042,7 @@ dependencies = [
  "crossterm",
  "omega-config",
  "omega-daemon",
+ "omega-lua",
  "omega-search",
  "omega-session",
  "omega-tmux",
@@ -1054,7 +1055,6 @@ dependencies = [
 name = "omega-config"
 version = "0.1.0"
 dependencies = [
- "mlua",
  "serde",
  "serde_json",
  "tempfile",
@@ -1071,6 +1071,17 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "tempfile",
+]
+
+[[package]]
+name = "omega-lua"
+version = "0.1.0"
+dependencies = [
+ "mlua",
+ "omega-config",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

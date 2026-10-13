@@ -1,4 +1,5 @@
-use omega_config::{CustomCandidate, GitContext, LuaEngine, SessionEventPayload};
+use omega_config::{CustomCandidate, GitContext, SessionEventPayload};
+use omega_lua::LuaEngine;
 use std::path::{Path, PathBuf};
 
 #[test]

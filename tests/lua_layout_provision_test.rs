@@ -1,6 +1,6 @@
 use omega::cli::Commands;
 use omega::commands::execute_command_with_engine;
-use omega_config::LuaEngine;
+use omega_lua::LuaEngine;
 use omega_tmux::MockTmuxClient;
 use tempfile::tempdir;
 

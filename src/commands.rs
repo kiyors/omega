@@ -27,7 +27,7 @@ pub fn execute_command_with_engine<T: TmuxClient>(
     command: Commands,
     tmux: &mut T,
     config: &Config,
-    engine: Option<&omega_config::LuaEngine>,
+    engine: Option<&omega_lua::LuaEngine>,
 ) -> Result<()> {
     let runner = TmuxActionRunner::new();
     let namer = NamingPipeline::new();
@@ -334,7 +334,7 @@ pub fn smart_connect<T: TmuxClient>(
     session_path: &Path,
     command: Option<&str>,
     config: &Config,
-    engine: Option<&omega_config::LuaEngine>,
+    engine: Option<&omega_lua::LuaEngine>,
 ) -> Result<()> {
     if !tmux.has_session(session_name) {
         let matched_alias = config.aliases.iter().find(|a| {
@@ -414,7 +414,7 @@ fn resolve_tmux_session_name<T: TmuxClient>(
     namer: &NamingPipeline,
     target_path: &Path,
     config: &Config,
-    engine: Option<&omega_config::LuaEngine>,
+    engine: Option<&omega_lua::LuaEngine>,
     tmux: &T,
 ) -> String {
     let active_sessions = tmux.list_sessions().unwrap_or_default();

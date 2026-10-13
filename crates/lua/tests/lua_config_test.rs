@@ -1,4 +1,4 @@
-use omega_config::LuaEngine;
+use omega_lua::LuaEngine;
 use tempfile::tempdir;
 
 #[test]

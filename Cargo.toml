@@ -13,7 +13,7 @@ authors.workspace = true
 license.workspace = true
 
 [workspace]
-members = [ "crates/session", "crates/search", "crates/config", "crates/tmux", "crates/daemon" ]
+members = [ "crates/session", "crates/search", "crates/config", "crates/lua", "crates/tmux", "crates/daemon" ]
 
 [workspace.dependencies]
 clap          = { features = [ "derive" ], version = "4.6" }
@@ -24,6 +24,7 @@ fuzzy-matcher = "0.3"
 mlua          = { features = [ "lua54", "vendored", "serde", "send" ], version = "0.12" }
 omega-config  = { path = "crates/config", version = "0.1.0" }
 omega-daemon  = { path = "crates/daemon", version = "0.1.0" }
+omega-lua     = { path = "crates/lua", version = "0.1.0" }
 omega-search  = { path = "crates/search", version = "0.1.0" }
 omega-session = { path = "crates/session", version = "0.1.0" }
 omega-tmux    = { path = "crates/tmux", version = "0.1.0" }
@@ -41,6 +42,7 @@ color-eyre.workspace    = true
 crossterm.workspace     = true
 omega-config.workspace  = true
 omega-daemon.workspace  = true
+omega-lua.workspace     = true
 omega-search.workspace  = true
 omega-session.workspace = true
 omega-tmux.workspace    = true

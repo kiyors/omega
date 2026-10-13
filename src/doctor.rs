@@ -1,4 +1,5 @@
-use omega_config::{Config, LuaEngine};
+use omega_config::Config;
+use omega_lua::LuaEngine;
 use std::path::Path;
 use std::process::Command;
 

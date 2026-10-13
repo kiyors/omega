@@ -1,6 +1,3 @@
-pub mod engine;
-
-pub use engine::LuaEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -176,42 +173,24 @@ impl Config {
         None
     }
 
-    /// Loads configuration alongside an optional active `LuaEngine` instance.
-    pub fn load_with_engine() -> (Self, Option<LuaEngine>) {
+    /// Loads configuration from standard paths (`config.json`).
+    pub fn load() -> Self {
         if let Some(dir) = Self::config_dir() {
-            let has_lua = dir.join("init.lua").exists() || dir.join("plugins").is_dir();
-            if has_lua && let Ok(engine) = LuaEngine::from_config_dir(&dir) {
-                let cfg = engine.config();
-                return (cfg, Some(engine));
-            }
-
             let config_json = dir.join("config.json");
             if config_json.exists()
                 && let Ok(cfg) = Self::load_from_path(&config_json)
             {
-                return (cfg, None);
+                return cfg;
             }
         }
 
-        (Self::default(), None)
+        Self::default()
     }
 
-    /// Loads configuration from standard paths (`init.lua` takes precedence over `config.json`).
-    pub fn load() -> Self {
-        Self::load_with_engine().0
-    }
-
-    /// Loads configuration from an explicit file path (`.lua` or `.json`).
+    /// Loads configuration from an explicit JSON file path.
     pub fn load_from_path(path: &Path) -> std::io::Result<Self> {
-        if path.extension().and_then(|s| s.to_str()) == Some("lua") {
-            let dir = path.parent().unwrap_or(path);
-            let engine = LuaEngine::from_config_dir(dir)
-                .map_err(|e| std::io::Error::other(format!("{e}")))?;
-            Ok(engine.config())
-        } else {
-            let content = std::fs::read_to_string(path)?;
-            serde_json::from_str(&content)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        }
+        let content = std::fs::read_to_string(path)?;
+        serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }

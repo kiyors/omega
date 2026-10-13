@@ -1,6 +1,6 @@
-use crate::{Config, CustomCandidate, GitContext, SessionEventPayload};
 use mlua::RegistryKey;
 use mlua::prelude::*;
+use omega_config::{Config, CustomCandidate, GitContext, SessionEventPayload};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};

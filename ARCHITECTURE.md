@@ -13,7 +13,8 @@ Omega is designed around a modular Rust workspace architecture. Domain logic and
 ```text
 omega/
 ├── crates/                    # Subsystem crates (workspace members)
-│   ├── config/                # Configuration parsing & user preferences
+│   ├── config/                # Pure configuration data models, schema & JSON loader
+│   ├── lua/                   # Embedded Lua 5.4 runtime host, plugin engine & hook dispatcher
 │   ├── search/                # Fuzzy filtering & ranking engine (Skim / Nucleo)
 │   ├── tmux/                  # Low-level tmux client, layout parsing, actions & mock harnesses
 │   ├── session/               # Pure domain session discovery, naming, dedup & preview generation
@@ -147,8 +148,13 @@ Omega operates as an event-driven terminal application that reads active environ
 
 ### 3.6. Configuration Subsystem (`crates/config` / `omega-config`)
 
-- **Primary Responsibility**: Hosts the embedded Lua 5.4 engine (`mlua = "0.12"`), parses declarative `omega.setup` configuration, manages module path resolution (`lua/`), auto-loads plugins (`plugins/`), and exposes lifecycle event and naming hooks.
-- **Technologies**: `mlua` 0.12 (Lua 5.4, vendored, serde), Serde.
+- **Primary Responsibility**: Pure Rust configuration models (`Config`, `TuiConfig`, `WildcardRule`, `WindowLayoutConfig`, `PaneLayoutConfig`, `AliasConfig`, `NameSubstitution`), default settings, serde serialization/deserialization, and static JSON configuration loaders. Completely decoupled from C/FFI and Lua runtimes.
+- **Technologies**: Serde, `serde_json`.
+
+### 3.7. Lua Scripting & Extensibility Subsystem (`crates/lua` / `omega-lua`)
+
+- **Primary Responsibility**: Hosts the embedded Lua 5.4 engine (`mlua = "0.12"`), parses declarative `omega.setup` configuration tables into typed Rust configuration models, manages module path resolution (`lua/`), auto-loads plugins (`plugins/`), and dispatches lifecycle events and chainable naming hooks.
+- **Technologies**: `mlua` 0.12 (Lua 5.4, vendored, serde), Serde, `serde_json`.
 
 ---
 

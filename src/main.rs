@@ -6,7 +6,6 @@ use omega::cli::Cli;
 use omega::commands::{execute_command_with_engine, smart_connect};
 use omega::event::{Event, EventHandler};
 use omega::ui;
-use omega_config::Config;
 use omega_daemon::fetch_candidates_or_fallback;
 use omega_session::{PreviewGenerator, SessionCandidate, SessionSource};
 use omega_tmux::{RealTmuxClient, TmuxClient};
@@ -16,7 +15,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
-    let (config, lua_engine) = Config::load_with_engine();
+    let (config, lua_engine) = omega_lua::load_config_and_engine();
 
     let mut tmux_client = RealTmuxClient;
 
