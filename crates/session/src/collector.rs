@@ -94,25 +94,31 @@ impl SessionCollector {
         };
 
         // Precompute tiers once to avoid O(N log N) redundant traversals during sorting
-        let mut tagged: Vec<(usize, SessionCandidate)> = candidates
+        let mut tagged: Vec<(usize, usize, SessionCandidate)> = candidates
             .into_iter()
-            .map(|cand| {
+            .enumerate()
+            .map(|(idx, cand)| {
                 let tier = find_tier(&cand);
-                (tier, cand)
+                (idx, tier, cand)
             })
             .collect();
 
-        tagged.sort_by(|(tier_a, cand_a), (tier_b, cand_b)| {
+        tagged.sort_by(|(idx_a, tier_a, cand_a), (idx_b, tier_b, cand_b)| {
             if tier_a != tier_b {
                 tier_a.cmp(tier_b)
             } else {
                 let score_a = cand_a.score.unwrap_or(0.0);
                 let score_b = cand_b.score.unwrap_or(0.0);
-                score_b.total_cmp(&score_a)
+                let score_cmp = score_b.total_cmp(&score_a);
+                if score_cmp != std::cmp::Ordering::Equal {
+                    score_cmp
+                } else {
+                    idx_a.cmp(idx_b)
+                }
             }
         });
 
-        tagged.into_iter().map(|(_, cand)| cand).collect()
+        tagged.into_iter().map(|(_, _, cand)| cand).collect()
     }
 
     /// Discovers candidates across tmux, config, git, and zoxide, then deduplicates them.

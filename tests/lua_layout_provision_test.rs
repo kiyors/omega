@@ -88,3 +88,52 @@ fn test_connect_runs_wildcard_startup_command() {
     assert_eq!(tmux.sent_keys.len(), 1);
     assert_eq!(tmux.sent_keys[0].1, "cargo check");
 }
+
+#[test]
+fn test_harvest_and_sort_candidates_with_custom_source_and_naming() {
+    use omega::commands::harvest_and_sort_candidates;
+    use omega_session::SessionSource;
+
+    let dir = tempdir().unwrap();
+    let init_path = dir.path().join("init.lua");
+
+    let lua_code = r#"
+        local omega = require("omega")
+        omega.setup({
+            sort_order = { "custom", "tmux" },
+        })
+        omega.register_source("special", function()
+            return {
+                { name = "custom:project", path = "/tmp/special-project", icon = "⚡" }
+            }
+        end)
+        omega.session_name(function(path, git_ctx)
+            return "hook:name.with:dots"
+        end)
+    "#;
+
+    std::fs::write(&init_path, lua_code).unwrap();
+    let engine = LuaEngine::new().unwrap();
+    engine.load_file(&init_path).unwrap();
+    let config = engine.config();
+
+    let candidates = harvest_and_sort_candidates(&config, Some(&engine));
+
+    let custom_cand = candidates
+        .iter()
+        .find(|c| c.source == SessionSource::Custom)
+        .expect("custom candidate should be present");
+
+    assert_eq!(custom_cand.name, "custom:project");
+    assert_eq!(custom_cand.icon.as_deref(), Some("⚡"));
+
+    // Any non-tmux, non-alias, non-custom candidate evaluated under the hook will be sanitized
+    for cand in &candidates {
+        if cand.source != SessionSource::Tmux
+            && cand.source != SessionSource::Alias
+            && cand.source != SessionSource::Custom
+        {
+            assert_eq!(cand.name, "hook_name_with_dots");
+        }
+    }
+}

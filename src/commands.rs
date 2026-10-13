@@ -5,15 +5,62 @@ use omega_daemon::{
     DaemonServer, SnapshotManager, SnapshotStore, daemon_start, daemon_status, daemon_stop,
     fetch_candidates_or_fallback,
 };
-use omega_session::SessionSource;
-use omega_session::find_workspace_root;
 use omega_session::naming::NamingPipeline;
+use omega_session::{
+    SessionCandidate, SessionCollector, SessionSource, find_git_context, find_workspace_root,
+};
 use omega_tmux::{TmuxActionRunner, TmuxClient};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+
+/// Harvests candidates from cache/system, evaluates custom Lua sources,
+/// applies custom Lua naming hooks (omega.session_name), deduplicates
+/// candidates, and applies configured sort order.
+pub fn harvest_and_sort_candidates(
+    config: &Config,
+    engine: Option<&omega_lua::LuaEngine>,
+) -> Vec<SessionCandidate> {
+    let mut candidates = fetch_candidates_or_fallback(None, config);
+
+    if let Some(eng) = engine {
+        if let Ok(custom) = eng.eval_custom_sources() {
+            for item in custom {
+                candidates.push(SessionCandidate::from_custom(
+                    item.name,
+                    item.path,
+                    item.source_name,
+                    item.icon,
+                ));
+            }
+        }
+
+        // Apply custom naming hook (omega.session_name) to non-tmux candidates if configured
+        for cand in &mut candidates {
+            if cand.source != SessionSource::Tmux
+                && cand.source != SessionSource::Alias
+                && cand.source != SessionSource::Custom
+            {
+                let git_ctx = find_git_context(&cand.path);
+                if let Some(custom_name) = eng.call_session_name_hook(&cand.path, git_ctx.as_ref())
+                {
+                    cand.name = NamingPipeline::new().sanitize(&custom_name);
+                }
+            }
+        }
+    }
+
+    let collector = SessionCollector::new();
+    let mut candidates = collector.dedup_candidates(candidates, config.hide_attached);
+
+    if !config.sort_order.is_empty() {
+        candidates = collector.apply_sort_order(candidates, &config.sort_order);
+    }
+
+    candidates
+}
 
 pub fn execute_command<T: TmuxClient>(
     command: Commands,
@@ -39,19 +86,7 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             command,
         } => {
             // Check if target matches an existing candidate or alias
-            let mut candidates = fetch_candidates_or_fallback(None, config);
-            if let Some(eng) = engine
-                && let Ok(custom) = eng.eval_custom_sources()
-            {
-                for item in custom {
-                    candidates.push(omega_session::SessionCandidate::from_custom(
-                        item.name,
-                        item.path,
-                        item.source_name,
-                        item.icon,
-                    ));
-                }
-            }
+            let candidates = harvest_and_sort_candidates(config, engine);
 
             let matched = candidates
                 .iter()
@@ -113,24 +148,7 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             json,
             format,
         } => {
-            let mut candidates = fetch_candidates_or_fallback(None, config);
-            if let Some(eng) = engine
-                && let Ok(custom) = eng.eval_custom_sources()
-            {
-                for item in custom {
-                    candidates.push(omega_session::SessionCandidate::from_custom(
-                        item.name,
-                        item.path,
-                        item.source_name,
-                        item.icon,
-                    ));
-                }
-            }
-
-            if !config.sort_order.is_empty() {
-                let collector = omega_session::SessionCollector::new();
-                candidates = collector.apply_sort_order(candidates, &config.sort_order);
-            }
+            let mut candidates = harvest_and_sort_candidates(config, engine);
 
             if only_tmux || only_git || only_zoxide {
                 candidates.retain(|c| {

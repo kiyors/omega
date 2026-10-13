@@ -32,14 +32,19 @@ impl NamingPipeline {
         custom_hook_result: Option<&str>,
         substitutions: &[omega_config::NameSubstitution],
     ) -> String {
-        let compiled: Vec<(&omega_config::NameSubstitution, Option<regex::Regex>)> = substitutions
-            .iter()
-            .map(|s| (s, regex::Regex::new(&s.find).ok()))
-            .collect();
+        let effective_path = if substitutions.is_empty() {
+            std::borrow::Cow::Borrowed(path)
+        } else {
+            let compiled: Vec<(&omega_config::NameSubstitution, Option<regex::Regex>)> =
+                substitutions
+                    .iter()
+                    .map(|s| (s, regex::Regex::new(&s.find).ok()))
+                    .collect();
 
-        let path_str = path.to_string_lossy();
-        let transformed_path = apply_compiled_substitutions(path_str.into_owned(), &compiled);
-        let effective_path = Path::new(&transformed_path);
+            let path_str = path.to_string_lossy();
+            let transformed_path = apply_compiled_substitutions(path_str.into_owned(), &compiled);
+            std::borrow::Cow::Owned(std::path::PathBuf::from(transformed_path))
+        };
 
         let base_raw = if let Some(custom) = custom_hook_result {
             custom.to_owned()

@@ -53,59 +53,47 @@ pub fn run_doctor<E: DoctorEnv>(env: &E, config_dir: Option<&Path>) -> DoctorRep
     let mut items = Vec::new();
     let mut all_ok = true;
 
-    // 1. tmux check
-    match env.command_output("tmux", &["-V"]) {
-        Some(ver) => {
-            items.push(DoctorItem {
-                name: "tmux".to_owned(),
-                status: DoctorStatus::Ok,
-                message: format!("Installed ({ver})"),
-            });
-        }
-        None => {
-            all_ok = false;
-            items.push(DoctorItem {
-                name: "tmux".to_owned(),
-                status: DoctorStatus::Error,
-                message: "Not found in PATH (required for session multiplexing)".to_owned(),
-            });
-        }
-    }
+    let tools: [(&str, &[&str], bool, &str); 3] = [
+        ("tmux", &["-V"], true, "required for session multiplexing"),
+        (
+            "git",
+            &["--version"],
+            true,
+            "required for repo and worktree discovery",
+        ),
+        (
+            "zoxide",
+            &["--version"],
+            false,
+            "optional: frecency discovery disabled",
+        ),
+    ];
 
-    // 2. git check
-    match env.command_output("git", &["--version"]) {
-        Some(ver) => {
-            items.push(DoctorItem {
-                name: "git".to_owned(),
-                status: DoctorStatus::Ok,
-                message: format!("Installed ({ver})"),
-            });
-        }
-        None => {
-            all_ok = false;
-            items.push(DoctorItem {
-                name: "git".to_owned(),
-                status: DoctorStatus::Error,
-                message: "Not found in PATH (required for repo and worktree discovery)".to_owned(),
-            });
-        }
-    }
-
-    // 3. zoxide check (optional)
-    match env.command_output("zoxide", &["--version"]) {
-        Some(ver) => {
-            items.push(DoctorItem {
-                name: "zoxide".to_owned(),
-                status: DoctorStatus::Ok,
-                message: format!("Installed ({ver})"),
-            });
-        }
-        None => {
-            items.push(DoctorItem {
-                name: "zoxide".to_owned(),
-                status: DoctorStatus::Warning,
-                message: "Not found in PATH (optional: frecency discovery disabled)".to_owned(),
-            });
+    for (name, args, required, missing_desc) in tools {
+        match env.command_output(name, args) {
+            Some(ver) => {
+                items.push(DoctorItem {
+                    name: (*name).to_owned(),
+                    status: DoctorStatus::Ok,
+                    message: format!("Installed ({ver})"),
+                });
+            }
+            None => {
+                if required {
+                    all_ok = false;
+                    items.push(DoctorItem {
+                        name: (*name).to_owned(),
+                        status: DoctorStatus::Error,
+                        message: format!("Not found in PATH ({missing_desc})"),
+                    });
+                } else {
+                    items.push(DoctorItem {
+                        name: (*name).to_owned(),
+                        status: DoctorStatus::Warning,
+                        message: format!("Not found in PATH ({missing_desc})"),
+                    });
+                }
+            }
         }
     }
 

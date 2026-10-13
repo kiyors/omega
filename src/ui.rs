@@ -35,13 +35,18 @@ pub fn compute_horizontal_chunks(app: &App, area: Rect) -> Rc<[Rect]> {
     }
 }
 
-pub fn resolve_border_type(border_str: &str) -> BorderType {
+pub fn resolve_borders(border_str: &str) -> (Borders, BorderType) {
     match border_str {
-        "line" | "plain" => BorderType::Plain,
-        "double" => BorderType::Double,
-        "thick" => BorderType::Thick,
-        _ => BorderType::Rounded,
+        "none" => (Borders::NONE, BorderType::Plain),
+        "line" | "plain" => (Borders::ALL, BorderType::Plain),
+        "double" => (Borders::ALL, BorderType::Double),
+        "thick" => (Borders::ALL, BorderType::Thick),
+        _ => (Borders::ALL, BorderType::Rounded),
     }
+}
+
+pub fn resolve_border_type(border_str: &str) -> BorderType {
+    resolve_borders(border_str).1
 }
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -132,7 +137,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             .collect()
     };
 
-    let border_type = resolve_border_type(&app.preview_border);
+    let (preview_borders, border_type) = resolve_borders(&app.preview_border);
     let list_title = format!(" Workspaces ({}/{}) ", app.filtered.len(), app.items.len());
 
     let list_widget = List::new(list_items).block(
@@ -155,7 +160,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             .scroll((app.preview_scroll, 0))
             .block(
                 Block::default()
-                    .borders(Borders::ALL)
+                    .borders(preview_borders)
                     .border_type(border_type)
                     .title(preview_title),
             );

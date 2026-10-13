@@ -90,3 +90,21 @@ fn test_ui_responsive_collapse_and_split() {
     assert!(right_width > left_width);
     assert_eq!(left_width + right_width, 140);
 }
+
+#[test]
+fn test_ui_resolve_borders_including_none() {
+    use omega::ui::resolve_borders;
+    use ratatui::widgets::{BorderType, Borders};
+
+    let (b_none, t_none) = resolve_borders("none");
+    assert_eq!(b_none, Borders::NONE);
+    assert_eq!(t_none, BorderType::Plain);
+
+    let (b_rounded, t_rounded) = resolve_borders("rounded");
+    assert_eq!(b_rounded, Borders::ALL);
+    assert_eq!(t_rounded, BorderType::Rounded);
+
+    let (b_double, t_double) = resolve_borders("double");
+    assert_eq!(b_double, Borders::ALL);
+    assert_eq!(t_double, BorderType::Double);
+}
