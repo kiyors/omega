@@ -19,7 +19,17 @@ pub struct App {
     // Embedded TUI presentation configuration
     pub tui: TuiConfig,
 
+    // Sesh confirmation modal state
+    pub confirm_modal: Option<ConfirmModal>,
+
     scored_buffer: Vec<(usize, i64)>, // Reusable scoring buffer avoiding allocations
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfirmModal {
+    pub prompt: String,
+    pub target: String,
+    pub yes: bool,
 }
 
 impl App {
@@ -41,10 +51,47 @@ impl App {
             preview_content: String::new(),
             preview_border: default_tui.preview_border.clone(),
             tui: default_tui,
+            confirm_modal: None,
             scored_buffer: Vec::with_capacity(count),
         };
         app.refilter();
         app
+    }
+
+    pub fn prompt_kill_selected(&mut self) -> bool {
+        if let Some(item) = self.selected_item() {
+            let prompt = if item.source == SessionSource::Tmux {
+                "Do you want to kill this tmux session?".to_owned()
+            } else {
+                "Do you want to remove this workspace from the list?".to_owned()
+            };
+            self.confirm_modal = Some(ConfirmModal {
+                prompt,
+                target: item.name.clone(),
+                yes: true,
+            });
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn confirm_modal_toggle(&mut self) {
+        if let Some(ref mut modal) = self.confirm_modal {
+            modal.yes = !modal.yes;
+        }
+    }
+
+    pub fn confirm_modal_cancel(&mut self) {
+        self.confirm_modal = None;
+    }
+
+    pub fn confirm_modal_accept(&mut self) -> Option<String> {
+        if let Some(modal) = self.confirm_modal.take() {
+            if modal.yes { Some(modal.target) } else { None }
+        } else {
+            None
+        }
     }
 
     pub fn apply_tui_config(&mut self, cfg: &TuiConfig) {

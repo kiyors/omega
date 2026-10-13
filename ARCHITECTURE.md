@@ -149,22 +149,25 @@ Omega operates as an event-driven terminal application that reads active environ
 
 ### 3.6. Configuration Subsystem (`crates/config` / `omega-config`)
 
-- **Primary Responsibility**: Pure Rust configuration models (`Config`, `TuiConfig`, `WildcardRule`, `WindowLayoutConfig`, `PaneLayoutConfig`, `AliasConfig`, `NameSubstitution`), default settings, serde serialization/deserialization, and static JSON configuration loaders. Completely decoupled from C/FFI and Lua runtimes.
+- **Primary Responsibility**: Pure Rust configuration models (`Config`, `TuiConfig`, `ThemeConfig`, `WildcardRule`, `WindowLayoutConfig`, `PaneLayoutConfig`, `AliasConfig`, `NameSubstitution`), default settings, serde serialization/deserialization, and static JSON configuration loaders. Completely decoupled from C/FFI and Lua runtimes.
+- **Theme Configuration**: `ThemeConfig` provides element-level color configuration across 20+ UI slots (borders, search prompt, badges, cursor, selection, windows peek, modal buttons) with deserialization support from preset names or granular override tables.
 - **Technologies**: Serde, `serde_json`.
 
 ### 3.7. Lua Scripting & Extensibility Subsystem (`crates/lua` / `omega-lua`)
 
 - **Primary Responsibility**: Hosts the embedded Lua 5.4 engine (`mlua = "0.12"`), parses declarative `omega.setup` configuration tables into typed Rust configuration models, manages module path resolution (`lua/`), auto-loads plugins (`plugins/`), and dispatches lifecycle events and chainable naming hooks.
+- **Theming API**: Exposes `omega.theme(name_or_table)` and `omega.ui.theme(...)` for runtime theme switching and custom palette definition.
 - **Technologies**: `mlua` 0.12 (Lua 5.4, vendored, serde), Serde, `serde_json`.
 
 ### 3.8. Terminal UI Subsystem (`crates/ui` / `omega-ui`)
 
-- **Primary Responsibility**: Owns the interactive Ratatui rendering engine, popup modal geometry, ANSI SGR escape code parser, and user-configurable styling parameters.
+- **Primary Responsibility**: Owns the interactive Ratatui rendering engine, popup modal geometry, ANSI SGR escape code parser, semantic color theming, and Sesh-inspired navigation features.
 - **Key Modules**:
-  - `layout.rs`: Centered popup geometry calculations (`compute_popup_area`), small-terminal fallback boundaries, responsive preview split, and border style resolvers.
+  - `theme.rs`: Color parser supporting Hex (`#rrggbb`, `#rgb`), RGB functions (`rgb(r,g,b)`), 256-color indices (`color256:N`, `indexed:N`, or raw digits), and ANSI color names. Provides `ResolvedTheme` with 8 built-in presets (`catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `tokyonight`, `nord`, `gruvbox`, and `default`) with granular slot overrides.
+  - `layout.rs`: Centered popup geometry calculations (`compute_popup_area`), modal centering (`compute_centered_rect`), small-terminal fallback boundaries, responsive preview split, and border style resolvers.
   - `ansi.rs`: Zero-allocation ANSI SGR parser translating escape sequences into styled Ratatui `Text` spans using borrowed string slices.
-  - `app.rs`: Central interactive state machine (`App`) managing search query filtering, session selection indices, preview scrolling, and config application (`apply_tui_config`).
-  - `render.rs`: Frame rendering engine composing the centered popup modal, `Clear` backdrop, search box with configurable prompts, list items with source badges and icons, ANSI preview pane, and footer hints.
+  - `app.rs`: Central interactive state machine (`App`) managing search query filtering, session selection indices, preview scrolling, config application (`apply_tui_config`), and confirmation modal dialog state (`ConfirmModal`).
+  - `render.rs`: Frame rendering engine composing the centered popup modal, `Clear` backdrop, search box with configurable prompts, list items with source badges, inline window peek with dynamic budget elision (`format_windows_peek`), group separator rules, ANSI preview pane, footer hints, and centered deletion confirmation modal overlay.
 
 ---
 

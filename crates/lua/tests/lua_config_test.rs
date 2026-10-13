@@ -232,3 +232,43 @@ fn test_lua_ui_api_configuration() {
     assert_eq!(cfg.tui.search_prompt, "search: ");
     assert!(!cfg.tui.show_footer);
 }
+
+#[test]
+fn test_lua_theme_api() {
+    let engine = LuaEngine::new().expect("failed to create lua engine");
+    let script = r##"
+        local omega = require("omega")
+        -- 1. Test string preset
+        omega.theme("tokyonight")
+
+        local cfg1 = omega.ui.get()
+        assert(cfg1.theme.name == "tokyonight", "theme name should be tokyonight")
+
+        -- 2. Test table with preset and element overrides
+        omega.theme({
+            preset = "catppuccin-mocha",
+            border = "#f5c2e7",
+            search_prompt = "#fab387",
+            badge_tmux = "#a6e3a1",
+        })
+
+        local cfg2 = omega.ui.get()
+        assert(cfg2.theme.name == "catppuccin-mocha", "theme name should be catppuccin-mocha")
+        assert(cfg2.theme.border == "#f5c2e7", "theme border should be #f5c2e7")
+        assert(cfg2.theme.search_prompt == "#fab387", "theme search_prompt should be #fab387")
+        assert(cfg2.theme.badge_tmux == "#a6e3a1", "theme badge_tmux should be #a6e3a1")
+    "##;
+
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("theme_test.lua");
+    std::fs::write(&file, script).unwrap();
+    engine
+        .load_file(&file)
+        .expect("should execute theme script");
+
+    let cfg = engine.config();
+    assert_eq!(cfg.tui.theme.name, "catppuccin-mocha");
+    assert_eq!(cfg.tui.theme.border.as_deref(), Some("#f5c2e7"));
+    assert_eq!(cfg.tui.theme.search_prompt.as_deref(), Some("#fab387"));
+    assert_eq!(cfg.tui.theme.badge_tmux.as_deref(), Some("#a6e3a1"));
+}

@@ -91,6 +91,30 @@ fn main() -> Result<()> {
 
         match events.next()? {
             Event::Key(key) => {
+                // If confirmation modal is open, intercept input for modal actions
+                if app.confirm_modal.is_some() {
+                    match key.code {
+                        KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                            app.confirm_modal_toggle();
+                        }
+                        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                            if let Some(target) = app.confirm_modal_accept()
+                                && let Some(selected) = app.selected_item()
+                            {
+                                if selected.source == SessionSource::Tmux {
+                                    let _ = tmux_client.kill_session(&target);
+                                }
+                                app.remove_selected();
+                            }
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                            app.confirm_modal_cancel();
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 // Exit
                 if key.code == KeyCode::Esc
                     || (key.code == KeyCode::Char('c')
@@ -107,14 +131,6 @@ fn main() -> Result<()> {
                     }
                     _ => None,
                 };
-                let kill_selected = |app: &mut App, tmux: &mut RealTmuxClient| {
-                    if let Some(selected) = app.selected_item() {
-                        if selected.source == SessionSource::Tmux {
-                            let _ = tmux.kill_session(&selected.name);
-                        }
-                        app.remove_selected();
-                    }
-                };
 
                 if let Some(k) = key_str
                     && let Some(action) = config.keymaps.get(&k)
@@ -122,7 +138,7 @@ fn main() -> Result<()> {
                     match action.as_str() {
                         "connect" => break app.selected_item().cloned(),
                         "kill_session" => {
-                            kill_selected(&mut app, &mut tmux_client);
+                            app.prompt_kill_selected();
                             continue;
                         }
                         "select_next" => {
@@ -173,7 +189,7 @@ fn main() -> Result<()> {
                         app.scroll_preview_down();
                     }
                     KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        kill_selected(&mut app, &mut tmux_client);
+                        app.prompt_kill_selected();
                     }
                     KeyCode::Backspace => {
                         app.query.pop();

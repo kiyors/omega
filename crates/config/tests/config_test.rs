@@ -85,3 +85,77 @@ fn test_tui_popup_and_customization_config_defaults_and_override() {
     assert!(!loaded.tui.show_path);
     assert!(!loaded.tui.show_footer);
 }
+
+#[test]
+fn test_tui_theme_and_sesh_features_config() {
+    let cfg = Config::default();
+    assert_eq!(cfg.tui.theme.name, "catppuccin-mocha");
+    assert!(cfg.tui.theme.border.is_none());
+    assert!(!cfg.tui.show_windows);
+    assert!(!cfg.tui.group_separator);
+
+    let dir = tempdir().unwrap();
+
+    // 1. Theme specified as a string
+    let json_str_path = dir.path().join("config_str.json");
+    std::fs::write(
+        &json_str_path,
+        r#"{
+            "tui": {
+                "theme": "tokyonight",
+                "show_windows": true,
+                "group_separator": true
+            }
+        }"#,
+    )
+    .unwrap();
+    let loaded_str = Config::load_from_path(&json_str_path).unwrap();
+    assert_eq!(loaded_str.tui.theme.name, "tokyonight");
+    assert!(loaded_str.tui.show_windows);
+    assert!(loaded_str.tui.group_separator);
+
+    // 2. Theme specified as an object with element color overrides
+    let json_obj_path = dir.path().join("config_obj.json");
+    std::fs::write(
+        &json_obj_path,
+        r##"{
+            "tui": {
+                "theme": {
+                    "name": "catppuccin-latte",
+                    "border": "#8839ef",
+                    "border_focused": "#1e66f5",
+                    "search_prompt": "#d20f39",
+                    "item_selected_fg": "#7287fd",
+                    "item_selected_bg": "#ccd0da",
+                    "badge_tmux": "#40a02b",
+                    "inline_windows": "#7c7f93"
+                }
+            }
+        }"##,
+    )
+    .unwrap();
+    let loaded_obj = Config::load_from_path(&json_obj_path).unwrap();
+    assert_eq!(loaded_obj.tui.theme.name, "catppuccin-latte");
+    assert_eq!(loaded_obj.tui.theme.border.as_deref(), Some("#8839ef"));
+    assert_eq!(
+        loaded_obj.tui.theme.border_focused.as_deref(),
+        Some("#1e66f5")
+    );
+    assert_eq!(
+        loaded_obj.tui.theme.search_prompt.as_deref(),
+        Some("#d20f39")
+    );
+    assert_eq!(
+        loaded_obj.tui.theme.item_selected_fg.as_deref(),
+        Some("#7287fd")
+    );
+    assert_eq!(
+        loaded_obj.tui.theme.item_selected_bg.as_deref(),
+        Some("#ccd0da")
+    );
+    assert_eq!(loaded_obj.tui.theme.badge_tmux.as_deref(), Some("#40a02b"));
+    assert_eq!(
+        loaded_obj.tui.theme.inline_windows.as_deref(),
+        Some("#7c7f93")
+    );
+}

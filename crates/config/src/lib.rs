@@ -107,6 +107,194 @@ pub struct TuiConfig {
 
     #[serde(default = "default_true")]
     pub show_footer: bool,
+
+    #[serde(default)]
+    pub theme: ThemeConfig,
+
+    #[serde(default)]
+    pub show_windows: bool,
+
+    #[serde(default)]
+    pub group_separator: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ThemeConfig {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_focused: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_selected_fg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_selected_bg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_unselected_fg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_tmux: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_git: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_config: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_zoxide: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_custom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline_windows: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_separator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_border: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_scroll_indicator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_desc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirm_border: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirm_button_active: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for ThemeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = ThemeConfigRaw::deserialize(deserializer)?;
+        Ok(raw.into())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+enum ThemeConfigRaw {
+    Name(String),
+    Detailed(Box<ThemeConfigDetailed>),
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct ThemeConfigDetailed {
+    #[serde(default = "default_preset_name", alias = "preset")]
+    pub name: String,
+    pub border: Option<String>,
+    pub border_focused: Option<String>,
+    pub title: Option<String>,
+    pub search_prompt: Option<String>,
+    pub search_text: Option<String>,
+    pub item_selected_fg: Option<String>,
+    pub item_selected_bg: Option<String>,
+    pub item_unselected_fg: Option<String>,
+    pub item_path: Option<String>,
+    pub cursor: Option<String>,
+    pub badge_tmux: Option<String>,
+    pub badge_git: Option<String>,
+    pub badge_alias: Option<String>,
+    pub badge_config: Option<String>,
+    pub badge_zoxide: Option<String>,
+    pub badge_custom: Option<String>,
+    pub inline_windows: Option<String>,
+    pub group_separator: Option<String>,
+    pub preview_border: Option<String>,
+    pub preview_title: Option<String>,
+    pub preview_scroll_indicator: Option<String>,
+    pub footer_key: Option<String>,
+    pub footer_desc: Option<String>,
+    pub confirm_border: Option<String>,
+    pub confirm_button_active: Option<String>,
+}
+
+fn default_preset_name() -> String {
+    "catppuccin-mocha".to_owned()
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            name: default_preset_name(),
+            border: None,
+            border_focused: None,
+            title: None,
+            search_prompt: None,
+            search_text: None,
+            item_selected_fg: None,
+            item_selected_bg: None,
+            item_unselected_fg: None,
+            item_path: None,
+            cursor: None,
+            badge_tmux: None,
+            badge_git: None,
+            badge_alias: None,
+            badge_config: None,
+            badge_zoxide: None,
+            badge_custom: None,
+            inline_windows: None,
+            group_separator: None,
+            preview_border: None,
+            preview_title: None,
+            preview_scroll_indicator: None,
+            footer_key: None,
+            footer_desc: None,
+            confirm_border: None,
+            confirm_button_active: None,
+        }
+    }
+}
+
+impl From<ThemeConfigRaw> for ThemeConfig {
+    fn from(raw: ThemeConfigRaw) -> Self {
+        match raw {
+            ThemeConfigRaw::Name(name) => Self {
+                name,
+                ..Default::default()
+            },
+            ThemeConfigRaw::Detailed(d) => Self {
+                name: d.name,
+                border: d.border,
+                border_focused: d.border_focused,
+                title: d.title,
+                search_prompt: d.search_prompt,
+                search_text: d.search_text,
+                item_selected_fg: d.item_selected_fg,
+                item_selected_bg: d.item_selected_bg,
+                item_unselected_fg: d.item_unselected_fg,
+                item_path: d.item_path,
+                cursor: d.cursor,
+                badge_tmux: d.badge_tmux,
+                badge_git: d.badge_git,
+                badge_alias: d.badge_alias,
+                badge_config: d.badge_config,
+                badge_zoxide: d.badge_zoxide,
+                badge_custom: d.badge_custom,
+                inline_windows: d.inline_windows,
+                group_separator: d.group_separator,
+                preview_border: d.preview_border,
+                preview_title: d.preview_title,
+                preview_scroll_indicator: d.preview_scroll_indicator,
+                footer_key: d.footer_key,
+                footer_desc: d.footer_desc,
+                confirm_border: d.confirm_border,
+                confirm_button_active: d.confirm_button_active,
+            },
+        }
+    }
 }
 
 fn default_preview() -> bool {
@@ -175,6 +363,9 @@ impl Default for TuiConfig {
             show_icons: default_true(),
             show_path: default_true(),
             show_footer: default_true(),
+            theme: ThemeConfig::default(),
+            show_windows: false,
+            group_separator: false,
         }
     }
 }

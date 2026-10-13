@@ -106,6 +106,31 @@ impl LuaEngine {
         ui_tbl.set("setup", ui_setup_fn.clone())?;
         ui_tbl.set("set", ui_setup_fn)?;
         ui_tbl.set("get", ui_get_fn)?;
+
+        // omega.theme / omega.ui.theme API
+        let st_theme = Arc::clone(&state);
+        let theme_fn = lua.create_function(move |lua, value: LuaValue| {
+            if let Ok(mut st) = st_theme.lock() {
+                match value {
+                    LuaValue::String(s) => {
+                        st.config.tui.theme.name = s.to_str()?.to_string();
+                    }
+                    LuaValue::Table(_) => {
+                        let incoming: omega_config::ThemeConfig = lua.from_value(value)?;
+                        st.config.tui.theme = incoming;
+                    }
+                    _ => {
+                        return Err(mlua::Error::runtime(
+                            "omega.theme expects a theme preset name string or configuration table",
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        omega.set("theme", theme_fn.clone())?;
+        ui_tbl.set("theme", theme_fn)?;
+
         omega.set("ui", ui_tbl)?;
 
         // omega.session_name(function) — chainable hooks

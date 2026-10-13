@@ -83,3 +83,17 @@ pub fn resolve_borders(border_str: &str) -> (Borders, BorderType) {
 pub fn resolve_border_type(border_str: &str) -> BorderType {
     resolve_borders(border_str).1
 }
+
+#[must_use]
+pub fn compute_centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    let x = area.x.saturating_add((area.width.saturating_sub(w)) / 2);
+    let y = area.y.saturating_add((area.height.saturating_sub(h)) / 2);
+    Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    }
+}

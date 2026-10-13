@@ -78,6 +78,7 @@ pub struct SessionCandidate {
     pub icon: Option<String>,
     pub attached: bool,
     pub windows: Option<usize>,
+    pub window_names: Vec<String>,
 }
 
 impl SessionCandidate {
@@ -92,6 +93,7 @@ impl SessionCandidate {
             icon: None,
             attached: false,
             windows: None,
+            window_names: Vec::new(),
         }
     }
 
@@ -111,10 +113,11 @@ impl SessionCandidate {
             icon,
             attached: false,
             windows: None,
+            window_names: Vec::new(),
         }
     }
 
-    /// Inherits missing metadata (alias, custom_source, icon, score) from another candidate.
+    /// Inherits missing metadata (alias, custom_source, icon, score, window_names) from another candidate.
     pub fn inherit_metadata(&mut self, other: &Self) {
         if self.alias.is_none() {
             self.alias = other.alias.clone();
@@ -127,6 +130,9 @@ impl SessionCandidate {
         }
         if self.score.is_none() {
             self.score = other.score;
+        }
+        if self.window_names.is_empty() {
+            self.window_names = other.window_names.clone();
         }
     }
 }
