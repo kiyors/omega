@@ -8,7 +8,7 @@ use omega_session::find_workspace_root;
 use omega_session::naming::NamingPipeline;
 use omega_session::snapshot::SnapshotStore;
 use omega_session::tmux::SnapshotManager;
-use omega_session::{SessionCollector, SessionSource, TmuxActionRunner, TmuxClient};
+use omega_session::{SessionSource, TmuxActionRunner, TmuxClient};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,6 @@ pub fn execute_command<T: TmuxClient>(
     config: &Config,
 ) -> Result<()> {
     let runner = TmuxActionRunner::new();
-    let collector = SessionCollector::new();
     let namer = NamingPipeline::new();
 
     match command {
@@ -31,7 +30,7 @@ pub fn execute_command<T: TmuxClient>(
             command,
         } => {
             // Check if target matches an existing candidate
-            let candidates = collector.collect_from_system(config);
+            let candidates = fetch_candidates_or_fallback(None, config);
             let matched = candidates
                 .iter()
                 .find(|c| c.name == target || c.alias.as_deref() == Some(&target));

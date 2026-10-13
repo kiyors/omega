@@ -16,7 +16,9 @@ use crate::tmux::{RealTmuxClient, SnapshotManager};
 use omega_config::Config;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, BufRead, BufReader, Error, ErrorKind, Write};
+use std::io::{self, Error, ErrorKind};
+#[cfg(unix)]
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -131,7 +133,7 @@ impl DaemonServer {
         let terminate = register_termination_signals()?;
         #[cfg(unix)]
         while running.load(Ordering::SeqCst) && !terminate.load(Ordering::SeqCst) {
-            self.serve_once(&running)?;
+            self.serve_once(&running, &terminate)?;
         }
 
         #[cfg(not(unix))]
@@ -148,7 +150,7 @@ impl DaemonServer {
     }
 
     #[cfg(unix)]
-    fn serve_once(&self, running: &Arc<AtomicBool>) -> io::Result<()> {
+    fn serve_once(&self, running: &Arc<AtomicBool>, terminate: &Arc<AtomicBool>) -> io::Result<()> {
         if self.socket_path.exists() {
             let _ = fs::remove_file(&self.socket_path);
         }
@@ -163,7 +165,10 @@ impl DaemonServer {
         let mut last_save = Instant::now();
         let stop_requested = Arc::new(AtomicBool::new(false));
 
-        while running.load(Ordering::SeqCst) && !stop_requested.load(Ordering::SeqCst) {
+        while running.load(Ordering::SeqCst)
+            && !stop_requested.load(Ordering::SeqCst)
+            && !terminate.load(Ordering::SeqCst)
+        {
             match listener.accept() {
                 Ok((stream, _)) => {
                     let candidates = Arc::clone(&self.candidates);
@@ -403,6 +408,32 @@ impl DaemonClient {
     }
 }
 
+#[cfg(not(unix))]
+pub struct DaemonClient;
+
+#[cfg(not(unix))]
+impl DaemonClient {
+    pub fn connect(_socket_path: Option<&Path>) -> Option<Self> {
+        None
+    }
+
+    pub fn ping(&mut self) -> io::Result<DaemonStatus> {
+        Err(Error::other("Daemon IPC socket is only supported on Unix"))
+    }
+
+    pub fn get_candidates(&mut self) -> io::Result<Vec<SessionCandidate>> {
+        Err(Error::other("Daemon IPC socket is only supported on Unix"))
+    }
+
+    pub fn save_snapshot(&mut self, _tag: Option<&str>) -> io::Result<PathBuf> {
+        Err(Error::other("Daemon IPC socket is only supported on Unix"))
+    }
+
+    pub fn stop(&mut self) -> io::Result<()> {
+        Err(Error::other("Daemon IPC socket is only supported on Unix"))
+    }
+}
+
 /// Tries to retrieve cached candidates from the background daemon socket.
 /// Falls back cleanly to direct synchronous scanning if the daemon is stopped
 /// or unreachable.
@@ -417,6 +448,9 @@ pub fn fetch_candidates_or_fallback(
         return candidates;
     }
 
+    #[cfg(not(unix))]
+    let _ = socket_path;
+
     // Direct synchronous scan fallback
     let collector = SessionCollector::new();
     collector.collect_from_system(config)
@@ -428,8 +462,8 @@ pub fn fetch_candidates_or_fallback(
 
 /// Starts the background daemon, spawning a detached `omega daemon serve`
 /// process. Returns the daemon pid. Succeeds immediately if already running.
+#[cfg(unix)]
 pub fn daemon_start(socket_path: &Path, serve_args: &[&str]) -> io::Result<u32> {
-    #[cfg(unix)]
     if let Ok(status) = ping_socket(socket_path) {
         return Ok(status.pid);
     }
@@ -448,7 +482,6 @@ pub fn daemon_start(socket_path: &Path, serve_args: &[&str]) -> io::Result<u32> 
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
 
-    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         // Detach from the controlling terminal so the daemon survives shell exit.
@@ -484,12 +517,17 @@ pub fn daemon_start(socket_path: &Path, serve_args: &[&str]) -> io::Result<u32> 
     ))
 }
 
+#[cfg(not(unix))]
+pub fn daemon_start(_socket_path: &Path, _serve_args: &[&str]) -> io::Result<u32> {
+    Err(Error::other("Daemon is only supported on Unix platforms"))
+}
+
 /// Stops the background daemon. The server writes a final snapshot before
 /// exiting. Succeeds if the daemon is already stopped.
+#[cfg(unix)]
 pub fn daemon_stop(socket_path: &Path) -> io::Result<()> {
     let pid = read_pid(socket_path);
 
-    #[cfg(unix)]
     if let Some(mut client) = DaemonClient::connect(Some(socket_path)) {
         // The server auto-saves a final snapshot on Stop before exiting.
         client.stop()?;
@@ -507,6 +545,11 @@ pub fn daemon_stop(socket_path: &Path) -> io::Result<()> {
     let _ = fs::remove_file(socket_path);
     let _ = fs::remove_file(pid_path(socket_path));
     Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn daemon_stop(_socket_path: &Path) -> io::Result<()> {
+    Err(Error::other("Daemon is only supported on Unix platforms"))
 }
 
 /// Returns the live daemon status, or None when the daemon is not reachable.

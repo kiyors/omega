@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[test]
 fn test_default_segment_naming() {
-    let namer = NamingPipeline::default();
+    let namer = NamingPipeline;
     let path = Path::new("/Users/gaurav/personal/projects/omega");
     let name = namer.resolve_name(path, 1, &[]);
     assert_eq!(name, "omega");
@@ -14,7 +14,7 @@ fn test_default_segment_naming() {
 
 #[test]
 fn test_tmux_character_sanitization() {
-    let namer = NamingPipeline::default();
+    let namer = NamingPipeline;
     let path = Path::new("/Users/gaurav/.dotfiles");
     let name = namer.resolve_name(path, 1, &[]);
     assert_eq!(
@@ -32,7 +32,7 @@ fn test_tmux_character_sanitization() {
 
 #[test]
 fn test_collision_resolution() {
-    let namer = NamingPipeline::default();
+    let namer = NamingPipeline;
     let path = Path::new("/Users/gaurav/work/omega");
 
     // Existing session "omega" points to a different path

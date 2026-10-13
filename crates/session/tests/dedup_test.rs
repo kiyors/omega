@@ -1,9 +1,11 @@
 use omega_session::{SessionCandidate, SessionCollector, SessionSource};
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
 use tempfile::tempdir;
 
 #[test]
+#[cfg(unix)]
 fn test_canonical_path_deduplication_priority() {
     let tmp = tempdir().unwrap();
     let real_dir = tmp.path().join("my-project");
@@ -18,7 +20,7 @@ fn test_canonical_path_deduplication_priority() {
         SessionCandidate::new("tmux-proj", &real_dir, SessionSource::Tmux),
     ];
 
-    let collector = SessionCollector::default();
+    let collector = SessionCollector;
     let result = collector.dedup_candidates(candidates, false);
 
     assert_eq!(
@@ -48,7 +50,7 @@ fn test_metadata_inheritance_from_alias() {
 
     let candidates = vec![alias_cand, tmux_cand];
 
-    let collector = SessionCollector::default();
+    let collector = SessionCollector;
     let result = collector.dedup_candidates(candidates, false);
 
     assert_eq!(result.len(), 1);
@@ -84,7 +86,7 @@ fn test_hide_attached_tmux_session() {
 
     let candidates = vec![attached_tmux, other_tmux];
 
-    let collector = SessionCollector::default();
+    let collector = SessionCollector;
     let result = collector.dedup_candidates(candidates, true);
 
     assert_eq!(result.len(), 1);
@@ -101,7 +103,7 @@ fn test_non_directory_fallback_dedup() {
         SessionSource::Tmux,
     );
 
-    let collector = SessionCollector::default();
+    let collector = SessionCollector;
     let result = collector.dedup_candidates(vec![cand1, cand2, cand3], false);
 
     assert_eq!(
