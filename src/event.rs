@@ -26,16 +26,19 @@ impl EventHandler {
         thread::spawn(move || {
             loop {
                 if event::poll(tick_rate).unwrap_or(false) {
-                    match event::read() {
-                        Ok(CrosstermEvent::Key(e)) => handler_sender.send(Event::Key(e)).ok(),
-                        Ok(CrosstermEvent::Mouse(e)) => handler_sender.send(Event::Mouse(e)).ok(),
+                    let res = match event::read() {
+                        Ok(CrosstermEvent::Key(e)) => handler_sender.send(Event::Key(e)),
+                        Ok(CrosstermEvent::Mouse(e)) => handler_sender.send(Event::Mouse(e)),
                         Ok(CrosstermEvent::Resize(w, h)) => {
-                            handler_sender.send(Event::Resize(w, h)).ok()
+                            handler_sender.send(Event::Resize(w, h))
                         }
-                        _ => None,
+                        _ => Ok(()),
                     };
-                } else {
-                    handler_sender.send(Event::Tick).ok();
+                    if res.is_err() {
+                        break;
+                    }
+                } else if handler_sender.send(Event::Tick).is_err() {
+                    break;
                 }
             }
         });

@@ -12,7 +12,7 @@ use std::io::{self, Error, ErrorKind};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 /// How often the daemon scans the system to refresh candidate sessions.
@@ -22,7 +22,7 @@ pub const CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 pub const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Polling sleep interval for the non-blocking socket accept loop.
-const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(15);
+const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Timeout waiting for the daemon process to exit on stop.
 const STOP_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -80,7 +80,7 @@ pub fn autosave_due(last: Instant, now: Instant) -> bool {
 
 pub struct DaemonServer {
     socket_path: PathBuf,
-    candidates: Arc<Mutex<Vec<SessionCandidate>>>,
+    candidates: Arc<RwLock<Vec<SessionCandidate>>>,
     start_time: Instant,
     config: Config,
     final_saved: AtomicBool,
@@ -92,7 +92,7 @@ impl DaemonServer {
         let initial_candidates = collector.collect_from_system(&config);
         Self {
             socket_path,
-            candidates: Arc::new(Mutex::new(initial_candidates)),
+            candidates: Arc::new(RwLock::new(initial_candidates)),
             start_time: Instant::now(),
             config,
             final_saved: AtomicBool::new(false),
@@ -102,7 +102,7 @@ impl DaemonServer {
     pub fn new_with_candidates(socket_path: PathBuf, candidates: Vec<SessionCandidate>) -> Self {
         Self {
             socket_path,
-            candidates: Arc::new(Mutex::new(candidates)),
+            candidates: Arc::new(RwLock::new(candidates)),
             start_time: Instant::now(),
             config: Config::default(),
             final_saved: AtomicBool::new(false),
@@ -177,7 +177,7 @@ impl DaemonServer {
                 std::thread::sleep(Duration::from_millis(100));
                 if last_scan.elapsed() >= CACHE_REFRESH_INTERVAL {
                     let fresh = collector.collect_from_system(&worker_config);
-                    if let Ok(mut lock) = worker_candidates.lock() {
+                    if let Ok(mut lock) = worker_candidates.write() {
                         *lock = fresh;
                     }
                     last_scan = Instant::now();
@@ -242,7 +242,7 @@ impl DaemonServer {
     #[cfg(unix)]
     fn handle_client_stream(
         stream: std::os::unix::net::UnixStream,
-        candidates: &Arc<Mutex<Vec<SessionCandidate>>>,
+        candidates: &Arc<RwLock<Vec<SessionCandidate>>>,
         start_time: Instant,
         stop_requested: &Arc<AtomicBool>,
         running: &Arc<AtomicBool>,
@@ -274,10 +274,10 @@ impl DaemonServer {
                             running: true,
                             pid: std::process::id(),
                             uptime_secs: start_time.elapsed().as_secs(),
-                            candidate_count: candidates.lock().map(|c| c.len()).unwrap_or(0),
+                            candidate_count: candidates.read().map(|c| c.len()).unwrap_or(0),
                         }),
                         DaemonRequest::GetCandidates => DaemonResponse::Candidates(
-                            candidates.lock().map(|c| c.clone()).unwrap_or_default(),
+                            candidates.read().map(|c| c.clone()).unwrap_or_default(),
                         ),
                         DaemonRequest::SaveSnapshot { tag } => {
                             match Self::save_snapshot_direct(tag.as_deref()) {
@@ -287,7 +287,6 @@ impl DaemonServer {
                         }
                         DaemonRequest::Stop => {
                             should_stop = true;
-                            let _ = Self::save_snapshot_direct(None);
                             DaemonResponse::Stopped
                         }
                     };
@@ -303,10 +302,7 @@ impl DaemonServer {
                 Err(ref e)
                     if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
                 {
-                    if stop_requested.load(Ordering::SeqCst) || !running.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    continue;
+                    break;
                 }
                 Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -538,13 +534,19 @@ pub fn daemon_start(_socket_path: &Path, _serve_args: &[&str]) -> io::Result<u32
 pub fn daemon_stop(socket_path: &Path) -> io::Result<()> {
     let pid = read_pid(socket_path);
 
-    if let Some(mut client) = DaemonClient::connect(Some(socket_path)) {
+    let stopped_via_socket = if let Some(mut client) = DaemonClient::connect(Some(socket_path)) {
         // The server auto-saves a final snapshot on Stop before exiting.
-        client.stop()?;
-    }
+        client.stop().is_ok()
+    } else {
+        false
+    };
 
-    // Wait for the process to exit, escalating signals if necessary.
-    if let Some(pid) = pid {
+    // Wait for the process to exit if stopped via socket.
+    // Avoid escalating signals to an unverified PID when the socket was dead,
+    // which prevents killing an unrelated process after PID rollover.
+    if let Some(pid) = pid
+        && stopped_via_socket
+    {
         wait_for_exit(pid, STOP_EXIT_TIMEOUT);
         if process_alive(pid) {
             kill_process(pid);

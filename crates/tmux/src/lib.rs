@@ -90,22 +90,32 @@ pub fn parse_session_state(
     let mut window_slots: HashMap<(&str, u32), (usize, usize)> = HashMap::new();
 
     for line in windows_raw.lines() {
-        let fields: Vec<&str> = line.splitn(5, '\t').collect();
-        if fields.len() < 5 {
+        let mut fields = line.splitn(5, '\t');
+        let (
+            Some(session_name),
+            Some(index_str),
+            Some(name_str),
+            Some(layout_str),
+            Some(active_str),
+        ) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        )
+        else {
             continue;
-        }
-        let (Some(session_name), Some(index)) = (
-            fields.first().copied(),
-            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
-        ) else {
+        };
+        let Ok(index) = index_str.parse::<u32>() else {
             continue;
         };
         let Some(&session_slot) = session_slots.get(session_name) else {
             continue;
         };
-        let name = fields.get(2).copied().unwrap_or_default().to_string();
-        let layout = fields.get(3).copied().unwrap_or_default().to_string();
-        let active = fields.get(4).copied() == Some("1");
+        let name = name_str.to_string();
+        let layout = layout_str.to_string();
+        let active = active_str == "1";
 
         let window_slot = sessions[session_slot].windows.len();
         sessions[session_slot].windows.push(TmuxWindowState {
@@ -119,24 +129,36 @@ pub fn parse_session_state(
     }
 
     for line in panes_raw.lines() {
-        let fields: Vec<&str> = line.splitn(6, '\t').collect();
-        if fields.len() < 6 {
+        let mut fields = line.splitn(6, '\t');
+        let (
+            Some(session_name),
+            Some(win_str),
+            Some(pane_str),
+            Some(path_str),
+            Some(cmd_str),
+            Some(active_str),
+        ) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        )
+        else {
             continue;
-        }
-        let (Some(session_name), Some(window_index), Some(pane_index)) = (
-            fields.first().copied(),
-            fields.get(1).and_then(|v| v.parse::<u32>().ok()),
-            fields.get(2).and_then(|v| v.parse::<u32>().ok()),
-        ) else {
+        };
+        let (Ok(window_index), Ok(pane_index)) = (win_str.parse::<u32>(), pane_str.parse::<u32>())
+        else {
             continue;
         };
         let Some(&(session_slot, window_slot)) = window_slots.get(&(session_name, window_index))
         else {
             continue;
         };
-        let path = fields.get(3).copied().unwrap_or_default().to_string();
-        let command = fields.get(4).copied().unwrap_or_default().to_string();
-        let active = fields.get(5).copied() == Some("1");
+        let path = path_str.to_string();
+        let command = cmd_str.to_string();
+        let active = active_str == "1";
         sessions[session_slot].windows[window_slot]
             .panes
             .push(TmuxPaneState {
@@ -199,6 +221,8 @@ pub trait TmuxClient {
     fn switch_client(&mut self, target: &str) -> io::Result<()>;
     fn attach_session(&mut self, target: &str) -> io::Result<()>;
     fn kill_session(&mut self, target: &str) -> io::Result<()>;
+    /// Renames an active tmux session. If `target` is None, renames the current session.
+    fn rename_session(&mut self, target: Option<&str>, new_name: &str) -> io::Result<()>;
     fn switch_last(&mut self) -> io::Result<()>;
     fn capture_pane(&self, target: &str) -> io::Result<String>;
 
@@ -253,16 +277,15 @@ impl TmuxClient for RealTmuxClient {
         let records = raw
             .lines()
             .filter_map(|line| {
-                let parts: Vec<&str> = line.trim().split(':').collect();
-                if parts.len() >= 3 {
-                    Some(TmuxSessionRecord {
-                        name: parts[0].to_string(),
-                        path: PathBuf::from(parts[1]),
-                        attached: parts[2] == "1",
-                    })
-                } else {
-                    None
-                }
+                let mut parts = line.trim().split(':');
+                let name = parts.next()?;
+                let path = parts.next()?;
+                let attached = parts.next()? == "1";
+                Some(TmuxSessionRecord {
+                    name: name.to_string(),
+                    path: PathBuf::from(path),
+                    attached,
+                })
             })
             .collect();
         Ok(records)
@@ -431,6 +454,22 @@ impl TmuxClient for RealTmuxClient {
         Ok(())
     }
 
+    fn rename_session(&mut self, target: Option<&str>, new_name: &str) -> io::Result<()> {
+        let mut cmd = Command::new("tmux");
+        cmd.arg("rename-session");
+        if let Some(t) = target {
+            cmd.args(["-t", t]);
+        }
+        cmd.arg(new_name);
+        let status = cmd.status()?;
+        if !status.success() {
+            return Err(Error::other(format!(
+                "Failed to rename session to '{new_name}'"
+            )));
+        }
+        Ok(())
+    }
+
     fn switch_last(&mut self) -> io::Result<()> {
         let status = Command::new("tmux")
             .args(["switch-client", "-l"])
@@ -520,6 +559,7 @@ pub struct MockTmuxClient {
     pub sent_keys: Vec<(String, String)>,
     pub selected_windows: Vec<String>,
     pub selected_panes: Vec<String>,
+    pub renamed_sessions: Vec<(Option<String>, String)>,
     pub snapshot_state: Vec<TmuxSessionState>,
 }
 
@@ -638,6 +678,12 @@ impl TmuxClient for MockTmuxClient {
 
     fn kill_session(&mut self, target: &str) -> io::Result<()> {
         self.killed_sessions.push(target.to_owned());
+        Ok(())
+    }
+
+    fn rename_session(&mut self, target: Option<&str>, new_name: &str) -> io::Result<()> {
+        self.renamed_sessions
+            .push((target.map(ToOwned::to_owned), new_name.to_owned()));
         Ok(())
     }
 

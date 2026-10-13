@@ -235,3 +235,16 @@ fn test_auto_save_filename_follows_spec_format() {
     assert_eq!(stamp.chars().nth(7), Some('-'));
     assert_eq!(stamp.chars().nth(10), Some('-'));
 }
+
+#[test]
+fn test_tagged_snapshot_sanitizes_path_traversal() {
+    let tmp = tempdir().expect("tempdir");
+    let store = SnapshotStore::new(tmp.path().to_path_buf());
+    let snapshot = sample_snapshot("2026-10-13T07:30:00Z");
+
+    let saved = store
+        .save_snapshot(&snapshot, Some("../../traversal-attack"))
+        .expect("save sanitized");
+    assert_eq!(saved.file_name().unwrap(), "traversal-attack.json");
+    assert_eq!(saved.parent().unwrap(), tmp.path());
+}

@@ -14,29 +14,14 @@ pub fn parse_tmux_output(raw: &str) -> Vec<SessionCandidate> {
             continue;
         }
 
-        let parts: Vec<&str> = trimmed.split(':').collect();
-        if parts.is_empty() {
+        let mut parts = trimmed.split(':');
+        let Some(name) = parts.next() else {
             continue;
-        }
-
-        let name = parts[0];
-        let path = if parts.len() > 1 {
-            PathBuf::from(parts[1])
-        } else {
-            PathBuf::new()
         };
 
-        let attached = if parts.len() > 2 {
-            parts[2] == "1"
-        } else {
-            false
-        };
-
-        let windows = if parts.len() > 3 {
-            parts[3].parse::<usize>().ok()
-        } else {
-            None
-        };
+        let path = parts.next().map(PathBuf::from).unwrap_or_default();
+        let attached = parts.next().is_some_and(|s| s == "1");
+        let windows = parts.next().and_then(|s| s.parse::<usize>().ok());
 
         let mut candidate = SessionCandidate::new(name, path, SessionSource::Tmux);
         candidate.attached = attached;
@@ -99,14 +84,18 @@ pub fn parse_tmux_windows(raw: &str) -> Vec<TmuxWindowInfo> {
             continue;
         }
 
-        let parts: Vec<&str> = trimmed.split(':').collect();
-        if parts.len() >= 3 {
-            windows.push(TmuxWindowInfo {
-                session_name: parts[0].to_string(),
-                window_name: parts[1].to_string(),
-                active: parts[2] == "1",
-            });
-        }
+        let mut parts = trimmed.split(':');
+        let (Some(session_name), Some(window_name), Some(active_str)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+
+        windows.push(TmuxWindowInfo {
+            session_name: session_name.to_string(),
+            window_name: window_name.to_string(),
+            active: active_str == "1",
+        });
     }
 
     windows

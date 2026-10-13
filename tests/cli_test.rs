@@ -93,3 +93,26 @@ fn test_cli_parse_default_query() {
     assert_eq!(cli.command, None);
     assert_eq!(cli.query, vec!["my-search-term"]);
 }
+
+#[test]
+fn test_cli_parse_rename() {
+    let args_one = vec!["omega", "rename", "new-name"];
+    let cli_one = Cli::try_parse_from(args_one).unwrap();
+    match cli_one.command {
+        Some(Commands::Rename { first, second }) => {
+            assert_eq!(first, "new-name");
+            assert_eq!(second, None);
+        }
+        other => panic!("Unexpected command: {:?}", other),
+    }
+
+    let args_two = vec!["omega", "rename", "old-name", "new-name"];
+    let cli_two = Cli::try_parse_from(args_two).unwrap();
+    match cli_two.command {
+        Some(Commands::Rename { first, second }) => {
+            assert_eq!(first, "old-name");
+            assert_eq!(second.as_deref(), Some("new-name"));
+        }
+        other => panic!("Unexpected command: {:?}", other),
+    }
+}

@@ -65,6 +65,15 @@ pub enum Commands {
         force: bool,
     },
 
+    /// Rename an active session
+    Rename {
+        /// Target session name, or new name if renaming the active session
+        first: String,
+
+        /// New session name (when renaming a specific session)
+        second: Option<String>,
+    },
+
     /// Bounce to the previously attached session
     Last,
 

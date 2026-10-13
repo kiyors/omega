@@ -90,3 +90,23 @@ fn test_switch_last_session_outside_tmux() {
     assert!(result.is_ok());
     assert_eq!(mock.attached_to.as_deref(), Some("prior-session"));
 }
+
+#[test]
+fn test_rename_session() {
+    use omega_tmux::TmuxClient;
+
+    let mut mock = MockTmuxClient::new();
+    let result = mock.rename_session(Some("old-name"), "new-name");
+    assert!(result.is_ok());
+    assert_eq!(
+        mock.renamed_sessions,
+        vec![(Some("old-name".to_string()), "new-name".to_string())]
+    );
+
+    let result_current = mock.rename_session(None, "active-renamed");
+    assert!(result_current.is_ok());
+    assert_eq!(
+        mock.renamed_sessions.get(1),
+        Some(&(None, "active-renamed".to_string()))
+    );
+}

@@ -126,6 +126,19 @@ pub fn execute_command<T: TmuxClient>(
             println!("Terminated session '{}'", target);
         }
 
+        Commands::Rename { first, second } => {
+            let (target, new_name) = match second {
+                Some(new) => (Some(first.as_str()), new),
+                None => (None, first),
+            };
+            tmux.rename_session(target, &new_name)?;
+            if let Some(t) = target {
+                println!("Renamed session '{t}' to '{new_name}'");
+            } else {
+                println!("Renamed active session to '{new_name}'");
+            }
+        }
+
         Commands::Last => {
             runner.last(tmux)?;
         }
@@ -173,6 +186,10 @@ pub fn execute_command<T: TmuxClient>(
         Commands::Save { name } => {
             let manager = SnapshotManager::new();
             let snapshot = manager.capture(tmux)?;
+            if snapshot.sessions.is_empty() {
+                println!("No active tmux sessions found to save.");
+                return Ok(());
+            }
             let store = SnapshotStore::new(SnapshotStore::default_dir());
             let path = store.save_snapshot(&snapshot, name.as_deref())?;
             println!("Saved snapshot to '{}'", path.display());
@@ -187,6 +204,14 @@ pub fn execute_command<T: TmuxClient>(
             let snapshot = store.load_snapshot(name.as_deref())?;
             let manager = SnapshotManager::new();
             let summary = manager.restore(tmux, &snapshot, session.as_deref(), overwrite)?;
+
+            if let Some(target) = session.as_deref()
+                && !summary.restored.iter().any(|s| s == target)
+                && !summary.skipped.iter().any(|s| s == target)
+            {
+                eprintln!("Session '{target}' not found in snapshot");
+                return Ok(());
+            }
 
             if !summary.restored.is_empty() {
                 println!("Restored sessions: {}", summary.restored.join(", "));

@@ -113,7 +113,9 @@ impl SnapshotStore {
 
         if let Some(name) = tag {
             let target_path = self.base_dir.join(tagged_filename(name));
-            fs::write(&target_path, content.as_bytes())?;
+            let tmp_path = target_path.with_extension("tmp");
+            fs::write(&tmp_path, content.as_bytes())?;
+            fs::rename(&tmp_path, &target_path)?;
             Ok(target_path)
         } else {
             let base_name = format!("{AUTO_SAVE_PREFIX}{}", current_timestamp_slug());
@@ -124,7 +126,9 @@ impl SnapshotStore {
                 counter = counter.saturating_add(1);
             }
 
-            fs::write(&target_path, content.as_bytes())?;
+            let tmp_path = target_path.with_extension("tmp");
+            fs::write(&tmp_path, content.as_bytes())?;
+            fs::rename(&tmp_path, &target_path)?;
 
             self.update_latest_pointer(&target_path)?;
             self.rotate_auto_saves(AUTO_SAVE_RETENTION)?;
@@ -235,10 +239,14 @@ impl SnapshotStore {
 }
 
 fn tagged_filename(name: &str) -> String {
-    if name.ends_with(".json") {
-        name.to_owned()
+    let clean = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name);
+    if clean.ends_with(".json") {
+        clean.to_owned()
     } else {
-        format!("{name}.json")
+        format!("{clean}.json")
     }
 }
 
