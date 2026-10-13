@@ -20,16 +20,25 @@ pub fn execute_command<T: TmuxClient>(
     tmux: &mut T,
     config: &Config,
 ) -> Result<()> {
+    execute_command_with_engine(command, tmux, config, None)
+}
+
+pub fn execute_command_with_engine<T: TmuxClient>(
+    command: Commands,
+    tmux: &mut T,
+    config: &Config,
+    engine: Option<&omega_config::LuaEngine>,
+) -> Result<()> {
     let runner = TmuxActionRunner::new();
     let namer = NamingPipeline::new();
 
     match command {
         Commands::Connect {
             target,
-            switch,
+            switch: _,
             command,
         } => {
-            // Check if target matches an existing candidate
+            // Check if target matches an existing candidate or alias
             let candidates = fetch_candidates_or_fallback(None, config);
             let matched = candidates
                 .iter()
@@ -38,36 +47,44 @@ pub fn execute_command<T: TmuxClient>(
             let (session_name, session_path) = match matched {
                 Some(cand) => (cand.name.clone(), cand.path.clone()),
                 None => {
-                    let target_path = PathBuf::from(&target);
-                    if target_path.exists() {
-                        let existing: Vec<(&str, &Path)> = candidates
-                            .iter()
-                            .filter(|c| c.source == SessionSource::Tmux)
-                            .map(|c| (c.name.as_str(), c.path.as_path()))
-                            .collect();
-                        let name = namer.resolve_name(&target_path, config.dir_length, &existing);
-                        (name, target_path)
+                    if let Some(alias) = config.aliases.iter().find(|a| a.name == target) {
+                        let path = PathBuf::from(&alias.path);
+                        (alias.name.clone(), path)
                     } else {
-                        // Treat as raw session name in current dir
-                        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                        (target.clone(), cwd)
+                        let target_path = PathBuf::from(&target);
+                        if target_path.exists() {
+                            let existing: Vec<(&str, &Path)> = candidates
+                                .iter()
+                                .filter(|c| c.source == SessionSource::Tmux)
+                                .map(|c| (c.name.as_str(), c.path.as_path()))
+                                .collect();
+                            let custom_name =
+                                engine.and_then(|e| e.call_session_name_hook(&target_path, None));
+                            let name = namer.resolve_full(
+                                &target_path,
+                                config.dir_length,
+                                &existing,
+                                custom_name.as_deref(),
+                                &config.name_substitutions,
+                            );
+                            (name, target_path)
+                        } else {
+                            // Treat as raw session name in current dir
+                            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                            (target.clone(), cwd)
+                        }
                     }
                 }
             };
 
-            if switch && tmux.is_inside_tmux() {
-                if !tmux.has_session(&session_name) {
-                    tmux.create_session(
-                        &session_name,
-                        &session_name,
-                        &session_path,
-                        command.as_deref(),
-                    )?;
-                }
-                tmux.switch_client(&session_name)?;
-            } else {
-                runner.connect(tmux, &session_name, &session_path, command.as_deref())?;
-            }
+            smart_connect(
+                tmux,
+                &session_name,
+                &session_path,
+                command.as_deref(),
+                config,
+                engine,
+            )?;
         }
 
         Commands::List {
@@ -151,8 +168,8 @@ pub fn execute_command<T: TmuxClient>(
         Commands::Mkdir { path, command } => {
             fs::create_dir_all(&path)?;
             let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            let name = resolve_tmux_session_name(&namer, &canonical, config.dir_length, tmux);
-            runner.connect(tmux, &name, &canonical, command.as_deref())?;
+            let name = resolve_tmux_session_name(&namer, &canonical, config, engine, tmux);
+            smart_connect(tmux, &name, &canonical, command.as_deref(), config, engine)?;
         }
 
         Commands::Clone { repo, dir } => {
@@ -179,8 +196,8 @@ pub fn execute_command<T: TmuxClient>(
             }
 
             let canonical = fs::canonicalize(&target_path).unwrap_or_else(|_| target_path.clone());
-            let name = resolve_tmux_session_name(&namer, &canonical, config.dir_length, tmux);
-            runner.connect(tmux, &name, &canonical, None)?;
+            let name = resolve_tmux_session_name(&namer, &canonical, config, engine, tmux);
+            smart_connect(tmux, &name, &canonical, None, config, engine)?;
         }
 
         Commands::Save { name } => {
@@ -261,6 +278,88 @@ pub fn execute_command<T: TmuxClient>(
                 server.listen_until(running)?;
             }
         },
+
+        Commands::Doctor => {
+            let env = crate::doctor::RealDoctorEnv;
+            let report = crate::doctor::run_doctor(&env, None);
+            crate::doctor::print_doctor_report(&report);
+        }
+
+        Commands::Completions { shell } => {
+            use clap::CommandFactory;
+            let mut cmd = crate::cli::Cli::command();
+            clap_complete::generate(shell, &mut cmd, "omega", &mut std::io::stdout());
+        }
+    }
+
+    Ok(())
+}
+
+pub fn smart_connect<T: TmuxClient>(
+    tmux: &mut T,
+    session_name: &str,
+    session_path: &Path,
+    command: Option<&str>,
+    config: &Config,
+    engine: Option<&omega_config::LuaEngine>,
+) -> Result<()> {
+    if !tmux.has_session(session_name) {
+        let windows_to_provision = if let Some(alias) = config
+            .aliases
+            .iter()
+            .find(|a| a.name == session_name || a.path == session_path.to_string_lossy())
+            && !alias.windows.is_empty()
+        {
+            Some(&alias.windows)
+        } else if let Some(rule) =
+            omega_session::layout::match_wildcard(session_path, &config.wildcards)
+            && !rule.windows.is_empty()
+        {
+            Some(&rule.windows)
+        } else {
+            None
+        };
+
+        if let Some(windows) = windows_to_provision {
+            omega_session::layout::provision_session_layout(
+                tmux,
+                session_name,
+                session_path,
+                windows,
+            )?;
+        } else {
+            let startup_cmd = command.or_else(|| {
+                omega_session::layout::match_wildcard(session_path, &config.wildcards)
+                    .and_then(|r| r.startup_command.as_deref())
+            });
+            tmux.create_session(session_name, session_name, session_path, startup_cmd)?;
+        }
+
+        if let Some(eng) = engine {
+            let _ = eng.dispatch_hook(
+                "session_created",
+                &omega_config::SessionEventPayload {
+                    name: session_name.to_owned(),
+                    path: session_path.to_path_buf(),
+                },
+            );
+        }
+    }
+
+    if tmux.is_inside_tmux() {
+        tmux.switch_client(session_name)?;
+    } else {
+        tmux.attach_session(session_name)?;
+    }
+
+    if let Some(eng) = engine {
+        let _ = eng.dispatch_hook(
+            "session_switched",
+            &omega_config::SessionEventPayload {
+                name: session_name.to_owned(),
+                path: session_path.to_path_buf(),
+            },
+        );
     }
 
     Ok(())
@@ -269,7 +368,8 @@ pub fn execute_command<T: TmuxClient>(
 fn resolve_tmux_session_name<T: TmuxClient>(
     namer: &NamingPipeline,
     target_path: &Path,
-    dir_length: usize,
+    config: &Config,
+    engine: Option<&omega_config::LuaEngine>,
     tmux: &T,
 ) -> String {
     let active_sessions = tmux.list_sessions().unwrap_or_default();
@@ -277,5 +377,12 @@ fn resolve_tmux_session_name<T: TmuxClient>(
         .iter()
         .map(|s| (s.name.as_str(), s.path.as_path()))
         .collect();
-    namer.resolve_name(target_path, dir_length, &existing)
+    let custom_name = engine.and_then(|e| e.call_session_name_hook(target_path, None));
+    namer.resolve_full(
+        target_path,
+        config.dir_length,
+        &existing,
+        custom_name.as_deref(),
+        &config.name_substitutions,
+    )
 }

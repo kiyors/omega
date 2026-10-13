@@ -3,28 +3,61 @@ use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 use omega::app::App;
 use omega::cli::Cli;
-use omega::commands::execute_command;
+use omega::commands::{execute_command_with_engine, smart_connect};
 use omega::event::{Event, EventHandler};
 use omega::ui;
 use omega_config::Config;
 use omega_daemon::fetch_candidates_or_fallback;
-use omega_session::{PreviewGenerator, SessionCandidate};
-use omega_tmux::{RealTmuxClient, TmuxActionRunner};
+use omega_session::{PreviewGenerator, SessionCandidate, SessionSource};
+use omega_tmux::RealTmuxClient;
 use std::time::Duration;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
-    let config = Config::load();
+    let (config, lua_engine) = match Config::config_dir() {
+        Some(dir) => {
+            let init_lua = dir.join("init.lua");
+            if init_lua.exists()
+                && let Ok(engine) = omega_config::LuaEngine::new()
+                && engine.configure_paths(&dir).is_ok()
+                && engine.load_plugins(&dir).is_ok()
+                && engine.load_file(&init_lua).is_ok()
+            {
+                (engine.config(), Some(engine))
+            } else {
+                (Config::load(), None)
+            }
+        }
+        None => (Config::load(), None),
+    };
+
     let mut tmux_client = RealTmuxClient;
 
     if let Some(cmd) = cli.command {
-        return execute_command(cmd, &mut tmux_client, &config);
+        return execute_command_with_engine(cmd, &mut tmux_client, &config, lua_engine.as_ref());
     }
 
     // Launch interactive TUI picker
-    let sessions = fetch_candidates_or_fallback(None, &config);
+    let mut sessions = fetch_candidates_or_fallback(None, &config);
+
+    if let Some(engine) = &lua_engine
+        && let Ok(custom_sources) = engine.eval_custom_sources()
+    {
+        for custom in custom_sources {
+            sessions.push(SessionCandidate {
+                name: custom.name,
+                path: custom.path,
+                source: SessionSource::Alias,
+                score: None,
+                alias: Some(custom.source_name),
+                icon: custom.icon,
+                attached: false,
+                windows: None,
+            });
+        }
+    }
 
     let initial_query = if cli.query.is_empty() {
         None
@@ -35,7 +68,7 @@ fn main() -> Result<()> {
     let mut app = App::new(sessions, initial_query);
     app.preview_enabled = config.tui.preview;
     app.preview_width = config.tui.preview_width;
-    app.preview_border = config.tui.preview_border;
+    app.preview_border = config.tui.preview_border.clone();
 
     // Asynchronous debounced preview worker channel
     let (req_tx, req_rx) = std::sync::mpsc::channel::<Option<SessionCandidate>>();
@@ -106,7 +139,42 @@ fn main() -> Result<()> {
                     break app.selected_item().cloned();
                 }
 
-                // Navigation & Preview Keymaps
+                // Check custom keymaps
+                let key_str = match key.code {
+                    KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        Some(format!("<C-{c}>"))
+                    }
+                    _ => None,
+                };
+                if let Some(k) = key_str
+                    && let Some(action) = config.keymaps.get(&k)
+                {
+                    match action.as_str() {
+                        "select_next" => {
+                            app.select_next();
+                            continue;
+                        }
+                        "select_prev" => {
+                            app.select_prev();
+                            continue;
+                        }
+                        "preview_scroll_up" => {
+                            app.scroll_preview_up();
+                            continue;
+                        }
+                        "preview_scroll_down" => {
+                            app.scroll_preview_down();
+                            continue;
+                        }
+                        "toggle_preview" => {
+                            app.toggle_preview();
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Default Navigation & Preview Keymaps
                 match key.code {
                     KeyCode::Up => app.select_prev(),
                     KeyCode::Down => app.select_next(),
@@ -148,8 +216,14 @@ fn main() -> Result<()> {
     ratatui::restore();
 
     if let Some(target) = chosen_session {
-        let runner = TmuxActionRunner::new();
-        runner.connect(&mut tmux_client, &target.name, &target.path, None)?;
+        smart_connect(
+            &mut tmux_client,
+            &target.name,
+            &target.path,
+            None,
+            &config,
+            lua_engine.as_ref(),
+        )?;
     }
 
     Ok(())

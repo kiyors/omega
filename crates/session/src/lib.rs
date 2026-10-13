@@ -1,5 +1,6 @@
 pub mod collector;
 pub mod discovery;
+pub mod layout;
 pub mod models;
 pub mod naming;
 pub mod preview;

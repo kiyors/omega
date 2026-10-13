@@ -49,6 +49,30 @@
           );
       };
 
+      packages = forEachSupportedSystem (
+        { pkgs }:
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            pname = "omega";
+            version = "0.1.0";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.libiconv
+            ];
+            meta = with pkgs.lib; {
+              description = "A high-performance terminal session and workspace navigator";
+              homepage = "https://github.com/kiyors/omega";
+              license = licenses.mit;
+              mainProgram = "omega";
+            };
+          };
+        }
+      );
+
       devShells = forEachSupportedSystem (
         { pkgs }:
         {

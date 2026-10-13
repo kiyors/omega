@@ -9,35 +9,67 @@ impl NamingPipeline {
     }
 
     /// Resolves a deterministic tmux session name for a path.
-    /// 1. Extracts the last `dir_length` non-empty path components.
-    /// 2. Sanitizes characters illegal in tmux ('.' and ':') by replacing them with '_'.
-    /// 3. Resolves collisions against existing sessions.
     pub fn resolve_name(
         &self,
         path: &Path,
         dir_length: usize,
         existing_sessions: &[(&str, &Path)],
     ) -> String {
-        let components: Vec<&str> = path
-            .components()
-            .filter_map(|c| match c {
-                std::path::Component::Normal(os_str) => os_str.to_str(),
-                _ => None,
-            })
-            .collect();
+        self.resolve_full(path, dir_length, existing_sessions, None, &[])
+    }
 
-        let count = dir_length.max(1);
-        let selected: &[&str] = if components.len() <= count {
-            &components
+    /// Full naming pipeline:
+    /// 1. Custom Lua Naming Hook (if Some)
+    /// 2. Plain Directory segments (last `dir_length` non-empty components)
+    /// 3. Name Substitutions (find/replace)
+    /// 4. Tmux Sanitization (replace illegal characters '.' and ':' with '_')
+    /// 5. Collision Resolution (append -2, -3 if taken by another directory)
+    pub fn resolve_full(
+        &self,
+        path: &Path,
+        dir_length: usize,
+        existing_sessions: &[(&str, &Path)],
+        custom_hook_result: Option<&str>,
+        substitutions: &[omega_config::NameSubstitution],
+    ) -> String {
+        let mut path_str = path.to_string_lossy().into_owned();
+        for subst in substitutions {
+            if path_str.contains(&subst.find) {
+                path_str = path_str.replace(&subst.find, &subst.replace);
+            }
+        }
+        let effective_path = Path::new(&path_str);
+
+        let mut base_raw = if let Some(custom) = custom_hook_result {
+            custom.to_owned()
         } else {
-            &components[components.len() - count..]
+            let components: Vec<&str> = effective_path
+                .components()
+                .filter_map(|c| match c {
+                    std::path::Component::Normal(os_str) => os_str.to_str(),
+                    _ => None,
+                })
+                .collect();
+
+            let count = dir_length.max(1);
+            let selected: &[&str] = if components.len() <= count {
+                &components
+            } else {
+                &components[components.len() - count..]
+            };
+
+            if selected.is_empty() {
+                "root".to_owned()
+            } else {
+                selected.join("-")
+            }
         };
 
-        let base_raw = if selected.is_empty() {
-            "root".to_string()
-        } else {
-            selected.join("-")
-        };
+        for subst in substitutions {
+            if base_raw.contains(&subst.find) {
+                base_raw = base_raw.replace(&subst.find, &subst.replace);
+            }
+        }
 
         let sanitized = self.sanitize(&base_raw);
 

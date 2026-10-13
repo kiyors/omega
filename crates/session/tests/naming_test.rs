@@ -59,3 +59,27 @@ fn test_collision_resolution() {
     let name_same = namer.resolve_name(path, 1, &existing_same);
     assert_eq!(name_same, "omega");
 }
+
+#[test]
+fn test_naming_with_custom_hook_and_substitutions() {
+    let namer = NamingPipeline;
+    let path = Path::new("/Users/gaurav/personal/projects/omega");
+
+    // 1. Custom hook result takes precedence
+    let hook_name = namer.resolve_full(path, 1, &[], Some("my-custom-session"), &[]);
+    assert_eq!(hook_name, "my-custom-session");
+
+    // 2. Name substitutions applied
+    let substitutions = vec![omega_config::NameSubstitution {
+        find: "projects/".to_owned(),
+        replace: "p-".to_owned(),
+    }];
+    let subst_name = namer.resolve_full(
+        Path::new("/Users/gaurav/personal/projects/omega"),
+        1,
+        &[],
+        None,
+        &substitutions,
+    );
+    assert_eq!(subst_name, "p-omega");
+}

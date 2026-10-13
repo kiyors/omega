@@ -126,6 +126,16 @@ pub enum Commands {
         #[command(subcommand)]
         action: DaemonAction,
     },
+
+    /// Diagnose system dependencies and configuration health
+    Doctor,
+
+    /// Generate shell completion scripts for Bash, Zsh, or Fish
+    Completions {
+        /// Target shell for autocompletion
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand, Debug, PartialEq, Eq, Clone)]

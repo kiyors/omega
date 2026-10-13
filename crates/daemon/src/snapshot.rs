@@ -407,6 +407,7 @@ impl SnapshotManager {
         overwrite: bool,
     ) -> io::Result<RestoreSummary> {
         let mut summary = RestoreSummary::default();
+        let mut target_matched = false;
 
         for session in &snapshot.sessions {
             if let Some(target) = target_session
@@ -414,6 +415,7 @@ impl SnapshotManager {
             {
                 continue;
             }
+            target_matched = true;
 
             let exists = tmux.has_session(&session.name);
             if exists && !overwrite {
@@ -426,6 +428,14 @@ impl SnapshotManager {
 
             self.restore_session(tmux, session)?;
             summary.restored.push(session.name.clone());
+        }
+
+        if let Some(target) = target_session
+            && !target_matched
+        {
+            return Err(io::Error::other(format!(
+                "Snapshot contains no session named '{target}'"
+            )));
         }
 
         Ok(summary)

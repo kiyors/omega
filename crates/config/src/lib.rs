@@ -1,11 +1,67 @@
+pub mod engine;
+
+pub use engine::LuaEngine;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitContext {
+    pub repo: String,
+    pub branch: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEventPayload {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomCandidate {
+    pub source_name: String,
+    pub name: String,
+    pub path: PathBuf,
+    pub icon: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PaneLayoutConfig {
+    pub command: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct WindowLayoutConfig {
+    pub name: String,
+    pub command: Option<String>,
+    pub layout: Option<String>,
+    #[serde(default)]
+    pub panes: Vec<PaneLayoutConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AliasConfig {
     pub name: String,
     pub path: String,
     pub icon: Option<String>,
+    #[serde(default)]
+    pub windows: Vec<WindowLayoutConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WildcardRule {
+    pub pattern: String,
+    pub startup_command: Option<String>,
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub windows: Vec<WindowLayoutConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NameSubstitution {
+    pub find: String,
+    pub replace: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +85,7 @@ fn default_preview_width() -> u16 {
 }
 
 fn default_preview_border() -> String {
-    "rounded".to_string()
+    "rounded".to_owned()
 }
 
 impl Default for TuiConfig {
@@ -57,6 +113,21 @@ pub struct Config {
     pub aliases: Vec<AliasConfig>,
 
     #[serde(default)]
+    pub wildcards: Vec<WildcardRule>,
+
+    #[serde(default)]
+    pub name_substitutions: Vec<NameSubstitution>,
+
+    #[serde(default)]
+    pub icons: HashMap<String, String>,
+
+    #[serde(default)]
+    pub keymaps: HashMap<String, String>,
+
+    #[serde(default)]
+    pub sort_order: Vec<serde_json::Value>,
+
+    #[serde(default)]
     pub tui: TuiConfig,
 }
 
@@ -75,28 +146,52 @@ impl Default for Config {
             dir_length: default_dir_length(),
             roots: Vec::new(),
             aliases: Vec::new(),
+            wildcards: Vec::new(),
+            name_substitutions: Vec::new(),
+            icons: HashMap::new(),
+            keymaps: HashMap::new(),
+            sort_order: Vec::new(),
             tui: TuiConfig::default(),
         }
     }
 }
 
 impl Config {
-    /// Loads configuration from standard paths (`$XDG_CONFIG_HOME/omega/config.json`,
-    /// `~/.config/omega/config.json`) or falls back to default.
-    pub fn load() -> Self {
+    /// Discovers configuration directory (`$XDG_CONFIG_HOME/omega` or `~/.config/omega`).
+    pub fn config_dir() -> Option<PathBuf> {
         if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
-            let path = PathBuf::from(config_home).join("omega/config.json");
-            if path.exists()
-                && let Ok(cfg) = Self::load_from_path(&path)
-            {
-                return cfg;
+            let path = PathBuf::from(config_home).join("omega");
+            if path.exists() {
+                return Some(path);
             }
         }
 
         if let Ok(home) = std::env::var("HOME") {
-            let path = PathBuf::from(home).join(".config/omega/config.json");
-            if path.exists()
-                && let Ok(cfg) = Self::load_from_path(&path)
+            let path = PathBuf::from(home).join(".config/omega");
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
+    /// Loads configuration from standard paths (`init.lua` takes precedence over `config.json`).
+    pub fn load() -> Self {
+        if let Some(dir) = Self::config_dir() {
+            let init_lua = dir.join("init.lua");
+            if init_lua.exists()
+                && let Ok(engine) = LuaEngine::new()
+                && engine.configure_paths(&dir).is_ok()
+                && engine.load_plugins(&dir).is_ok()
+                && engine.load_file(&init_lua).is_ok()
+            {
+                return engine.config();
+            }
+
+            let config_json = dir.join("config.json");
+            if config_json.exists()
+                && let Ok(cfg) = Self::load_from_path(&config_json)
             {
                 return cfg;
             }
@@ -105,10 +200,22 @@ impl Config {
         Self::default()
     }
 
-    /// Loads configuration from an explicit file path.
-    pub fn load_from_path(path: &std::path::Path) -> std::io::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    /// Loads configuration from an explicit file path (`.lua` or `.json`).
+    pub fn load_from_path(path: &Path) -> std::io::Result<Self> {
+        if path.extension().and_then(|s| s.to_str()) == Some("lua") {
+            let engine = LuaEngine::new().map_err(|e| std::io::Error::other(format!("{e}")))?;
+            if let Some(parent) = path.parent() {
+                let _ = engine.configure_paths(parent);
+                let _ = engine.load_plugins(parent);
+            }
+            engine
+                .load_file(path)
+                .map_err(|e| std::io::Error::other(format!("{e}")))?;
+            Ok(engine.config())
+        } else {
+            let content = std::fs::read_to_string(path)?;
+            serde_json::from_str(&content)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        }
     }
 }

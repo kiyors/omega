@@ -102,8 +102,9 @@ Omega operates as an event-driven terminal application that reads active environ
   - `main.rs`: Installs panic hooks (`color-eyre`), configures raw mode, drives the main event loop, and coordinates the asynchronous debounced preview worker thread.
   - `app.rs`: Holds active state (`items`, `filtered`, `query`, `selected`, `preview_enabled`, `preview_scroll`, `preview_content`). Computes query updates and preview scrolling.
   - `ansi.rs`: Zero-allocation parser translating ANSI SGR color/style escape codes into styled Ratatui `Text` spans.
-  - `cli.rs`: Clap CLI parser declaring subcommands (`connect`, `list`, `kill`, `last`, `root`, `mkdir`, `clone`, `save`, `restore`, `daemon`).
-  - `commands.rs`: Headless CLI command execution handlers (`connect`, `clone`, `save`, `restore`, `daemon`, etc.).
+  - `cli.rs`: Clap CLI parser declaring subcommands (`connect`, `list`, `kill`, `last`, `root`, `mkdir`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`).
+  - `commands.rs`: Headless CLI command execution handlers (`connect`, `clone`, `save`, `restore`, `daemon`, `doctor`, `completions`, etc.).
+  - `doctor.rs`: System dependency diagnostic engine validating `tmux`, `git`, `zoxide`, daemon socket health, and `init.lua` validity.
   - `event.rs`: Asynchronous/polling event channel delivering tick intervals and keypresses.
   - `ui.rs`: Two-pane Ratatui layout engine: candidate list on the left, live debounced preview on the right (55% width, auto-collapsing below 100 columns).
 
@@ -142,8 +143,8 @@ Omega operates as an event-driven terminal application that reads active environ
 
 ### 3.6. Configuration Subsystem (`crates/config` / `omega-config`)
 
-- **Primary Responsibility**: Serializes and validates user configuration (default directories, search excludes, keybindings, and TUI settings such as `preview`, `preview_width`, and `preview_border`).
-- **Technologies**: Serde, TOML / JSON.
+- **Primary Responsibility**: Hosts the embedded Lua 5.4 engine (`mlua = "0.12"`), parses declarative `omega.setup` configuration, manages module path resolution (`lua/`), auto-loads plugins (`plugins/`), and exposes lifecycle event and naming hooks.
+- **Technologies**: `mlua` 0.12 (Lua 5.4, vendored, serde), Serde.
 
 ---
 
@@ -159,8 +160,8 @@ Omega operates as an event-driven terminal application that reads active environ
 
 ### 4.2. Persistent User Configuration
 
-- **Type**: Local file storage (`~/.config/omega/config.toml` or platform equivalent via `dirs`).
-- **Purpose**: Persists custom scan paths, pinned sessions, and preference flags.
+- **Type**: Local file storage (`~/.config/omega/init.lua`, modular `lua/`, and `plugins/`, with JSON fallback).
+- **Purpose**: Persists declarative settings, keybindings, icons, path substitutions, aliases with startup layouts, and directory wildcard rules.
 
 ### 4.3. Session Snapshots & Persistence Store
 
@@ -225,6 +226,7 @@ Omega operates as an event-driven terminal application that reads active environ
 1. **Formal Workspace Split**: Completed. Partitioned into workspace member crates `crates/session`, `crates/search`, and `crates/config`.
 2. **Background Async Scanner**: Offload filesystem walks to background worker threads or Rayon iterators to ensure zero frame drops during initial launch.
 3. **Daemon / Persistent Cache**: Completed in Phase 3. Background Unix domain socket cache daemon with 15-minute rolling snapshot persistence, layout fidelity reconstruction, and non-destructive restore.
+4. **Extensibility & Polish**: Completed in Phase 4. Embedded Lua 5.4 configuration engine (`init.lua`), plugins and hooks, startup window/pane layouts, wildcard matching, `omega doctor`, shell completions, Homebrew formula, and Nix flake package outputs.
 
 ---
 

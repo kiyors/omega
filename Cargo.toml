@@ -17,9 +17,11 @@ members = [ "crates/session", "crates/search", "crates/config", "crates/tmux", "
 
 [workspace.dependencies]
 clap          = { features = [ "derive" ], version = "4.6" }
+clap_complete = "4.6"
 color-eyre    = "0.6.5"
 crossterm     = "0.29.0"
 fuzzy-matcher = "0.3"
+mlua          = { features = [ "lua54", "vendored", "serde", "send" ], version = "0.12" }
 omega-config  = { path = "crates/config", version = "0.1.0" }
 omega-daemon  = { path = "crates/daemon", version = "0.1.0" }
 omega-search  = { path = "crates/search", version = "0.1.0" }
@@ -33,6 +35,7 @@ walkdir       = "2.5"
 
 [dependencies]
 clap.workspace          = true
+clap_complete.workspace = true
 color-eyre.workspace    = true
 crossterm.workspace     = true
 omega-config.workspace  = true

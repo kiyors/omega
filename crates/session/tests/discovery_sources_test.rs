@@ -99,6 +99,7 @@ fn test_scan_config_sources() {
             name: "my-alias".to_string(),
             path: proj.to_str().unwrap().to_string(),
             icon: Some("🦀".to_string()),
+            windows: Vec::new(),
         }],
         ..Default::default()
     };
