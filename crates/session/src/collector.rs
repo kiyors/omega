@@ -35,9 +35,13 @@ impl SessionCollector {
                 continue;
             }
 
-            let key = match fs::canonicalize(&candidate.path) {
-                Ok(canonical) => DedupKey::CanonicalPath(canonical),
-                Err(_) => DedupKey::Name(candidate.name.clone()),
+            let key = if candidate.source == SessionSource::Window {
+                DedupKey::Name(candidate.name.clone())
+            } else {
+                match fs::canonicalize(&candidate.path) {
+                    Ok(canonical) => DedupKey::CanonicalPath(canonical),
+                    Err(_) => DedupKey::Name(candidate.name.clone()),
+                }
             };
 
             match key_to_index.entry(key) {
@@ -137,6 +141,21 @@ impl SessionCollector {
         {
             let raw = String::from_utf8_lossy(&output.stdout);
             all.extend(crate::discovery::parse_tmux_output(&raw));
+        }
+
+        // 1b. Active Tmux Windows
+        if let Ok(output) = std::process::Command::new("tmux")
+            .args([
+                "list-windows",
+                "-a",
+                "-F",
+                "#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}",
+            ])
+            .output()
+            && output.status.success()
+        {
+            let raw = String::from_utf8_lossy(&output.stdout);
+            all.extend(crate::discovery::parse_tmux_window_candidates(&raw));
         }
 
         // 2. Config aliases & static roots

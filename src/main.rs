@@ -18,15 +18,8 @@ fn main() -> Result<()> {
 
     let mut tmux_client = RealTmuxClient;
 
-    let (is_window_mode, initial_query) = match cli.command {
-        Some(omega::cli::Commands::Window { query }) => {
-            let initial = if query.is_empty() {
-                None
-            } else {
-                Some(query.join(" "))
-            };
-            (true, initial)
-        }
+    let (is_window_mode, raw_query) = match cli.command {
+        Some(omega::cli::Commands::Window { query }) => (true, query),
         Some(cmd) => {
             return execute_command_with_engine(
                 cmd,
@@ -35,14 +28,13 @@ fn main() -> Result<()> {
                 lua_engine.as_ref(),
             );
         }
-        None => {
-            let initial = if cli.query.is_empty() {
-                None
-            } else {
-                Some(cli.query.join(" "))
-            };
-            (false, initial)
-        }
+        None => (false, cli.query),
+    };
+
+    let initial_query = if raw_query.is_empty() {
+        None
+    } else {
+        Some(raw_query.join(" "))
     };
 
     // Launch interactive TUI picker

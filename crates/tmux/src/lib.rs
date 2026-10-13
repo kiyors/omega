@@ -411,9 +411,14 @@ impl TmuxClient for RealTmuxClient {
     }
 
     fn select_window(&mut self, window_target: &str) -> io::Result<()> {
-        let _ = Command::new("tmux")
+        let status = Command::new("tmux")
             .args(["select-window", "-t", window_target])
-            .status();
+            .status()?;
+        if !status.success() {
+            return Err(Error::other(format!(
+                "Failed to select tmux window '{window_target}'"
+            )));
+        }
         Ok(())
     }
 
@@ -783,11 +788,14 @@ impl TmuxActionRunner {
         client: &mut T,
         window_target: &str,
     ) -> io::Result<()> {
+        client.select_window(window_target)?;
         if client.is_inside_tmux() {
-            client.select_window(window_target)?;
             client.switch_client(window_target)
         } else {
-            client.attach_session(window_target)
+            let session_target = window_target
+                .split_once(':')
+                .map_or(window_target, |(s, _)| s);
+            client.attach_session(session_target)
         }
     }
 

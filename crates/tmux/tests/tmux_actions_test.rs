@@ -134,7 +134,8 @@ fn test_switch_window_outside_tmux() {
     let result = runner.switch_window(&mut mock, "omega:editor");
 
     assert!(result.is_ok());
-    assert_eq!(mock.attached_to.as_deref(), Some("omega:editor"));
+    assert_eq!(mock.selected_windows, vec!["omega:editor"]);
+    assert_eq!(mock.attached_to.as_deref(), Some("omega"));
     assert_eq!(mock.switched_to, None);
 }
 

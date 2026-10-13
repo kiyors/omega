@@ -2,6 +2,13 @@
 
 use crate::cli::ShellTarget;
 
+pub const TMUX_KEYBINDINGS: &str = r#"# Omega Tmux Keybindings
+bind-key -n M-s display-popup -E -w 85% -h 80% "omega"
+bind-key -n M-w display-popup -E -w 85% -h 80% "omega window"
+bind-key L run-shell "omega last"
+bind-key 9 run-shell "omega root"
+"#;
+
 #[must_use]
 pub fn generate_init_script(target: ShellTarget, include_tmux: bool) -> String {
     let mut script = String::new();
@@ -67,14 +74,7 @@ bind \ew __omega_window_run
             );
         }
         ShellTarget::Tmux => {
-            script.push_str(
-                r#"# Omega Tmux Keybindings
-bind-key -n M-s display-popup -E -w 85% -h 80% "omega"
-bind-key -n M-w display-popup -E -w 85% -h 80% "omega window"
-bind-key L run-shell "omega last"
-bind-key 9 run-shell "omega root"
-"#,
-            );
+            script.push_str(TMUX_KEYBINDINGS);
         }
     }
 
@@ -82,14 +82,7 @@ bind-key 9 run-shell "omega root"
         if !script.is_empty() {
             script.push('\n');
         }
-        script.push_str(
-            r#"# Omega Tmux Keybindings
-bind-key -n M-s display-popup -E -w 85% -h 80% "omega"
-bind-key -n M-w display-popup -E -w 85% -h 80% "omega window"
-bind-key L run-shell "omega last"
-bind-key 9 run-shell "omega root"
-"#,
-        );
+        script.push_str(TMUX_KEYBINDINGS);
     }
 
     script

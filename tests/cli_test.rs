@@ -155,3 +155,23 @@ fn test_cli_parse_scratch_named() {
         other => panic!("Unexpected command: {:?}", other),
     }
 }
+
+#[test]
+fn test_execute_window_command() {
+    let mut mock = omega_tmux::MockTmuxClient::new();
+    mock.inside_tmux = true;
+    mock.raw_windows = "omega\teditor\t/tmp/omega\t1\nomega\tterminal\t/tmp/omega\t0\n".to_string();
+
+    let config = omega_config::Config::default();
+    let res = omega::commands::execute_command(
+        Commands::Window {
+            query: vec!["terminal".to_string()],
+        },
+        &mut mock,
+        &config,
+    );
+
+    assert!(res.is_ok());
+    assert_eq!(mock.selected_windows, vec!["omega:terminal"]);
+    assert_eq!(mock.switched_to.as_deref(), Some("omega:terminal"));
+}
