@@ -143,3 +143,18 @@ fn test_lua_engine_package_path_and_plugins() {
     let plugin_val: i32 = engine.eval_global("PLUGIN_LOADED").unwrap();
     assert_eq!(plugin_val, 42);
 }
+
+#[test]
+fn test_lua_engine_from_config_dir_standalone_plugins() {
+    let dir = tempdir().unwrap();
+    let plugins_dir = dir.path().join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+
+    let plugin_path = plugins_dir.join("standalone.lua");
+    std::fs::write(&plugin_path, "_G.STANDALONE = 'loaded'").unwrap();
+
+    // No init.lua created
+    let engine = LuaEngine::from_config_dir(dir.path()).expect("should bootstrap from config dir");
+    let val: String = engine.eval_global("STANDALONE").unwrap();
+    assert_eq!(val, "loaded");
+}

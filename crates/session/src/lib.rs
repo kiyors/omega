@@ -7,7 +7,8 @@ pub mod preview;
 
 pub use collector::SessionCollector;
 pub use discovery::{
-    TmuxWindowInfo, find_workspace_root, parse_tmux_windows, scan_git_repositories,
+    TmuxWindowInfo, find_git_context, find_workspace_root, parse_tmux_windows,
+    scan_git_repositories,
 };
 pub use models::{SessionCandidate, SessionSource};
 pub use naming::NamingPipeline;

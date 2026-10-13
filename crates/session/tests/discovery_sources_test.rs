@@ -114,3 +114,30 @@ fn test_scan_config_sources() {
     assert_eq!(static_roots[0].name, "workspace-proj");
     assert_eq!(static_roots[0].source, SessionSource::Config);
 }
+
+#[test]
+fn test_find_git_context() {
+    let tmp = tempdir().unwrap();
+    let repo_dir = tmp.path().join("my-rust-repo");
+    let git_dir = repo_dir.join(".git");
+    fs::create_dir_all(&git_dir).unwrap();
+
+    let head_file = git_dir.join("HEAD");
+    let mut f = File::create(head_file).unwrap();
+    writeln!(f, "ref: refs/heads/main").unwrap();
+
+    // From inside repo
+    let subfolder = repo_dir.join("src/models");
+    fs::create_dir_all(&subfolder).unwrap();
+
+    let ctx = omega_session::find_git_context(&subfolder);
+    assert!(ctx.is_some());
+    let unwrapped = ctx.unwrap();
+    assert_eq!(unwrapped.repo, "my-rust-repo");
+    assert_eq!(unwrapped.branch, "main");
+
+    // Outside repo
+    let non_repo = tmp.path().join("other");
+    fs::create_dir(&non_repo).unwrap();
+    assert!(omega_session::find_git_context(&non_repo).is_none());
+}

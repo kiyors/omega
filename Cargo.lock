@@ -1087,6 +1087,7 @@ version = "0.1.0"
 dependencies = [
  "omega-config",
  "omega-tmux",
+ "regex",
  "serde",
  "tempfile",
  "walkdir",

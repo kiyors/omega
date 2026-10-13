@@ -9,29 +9,14 @@ use omega::ui;
 use omega_config::Config;
 use omega_daemon::fetch_candidates_or_fallback;
 use omega_session::{PreviewGenerator, SessionCandidate, SessionSource};
-use omega_tmux::RealTmuxClient;
+use omega_tmux::{RealTmuxClient, TmuxClient};
 use std::time::Duration;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
-    let (config, lua_engine) = match Config::config_dir() {
-        Some(dir) => {
-            let init_lua = dir.join("init.lua");
-            if init_lua.exists()
-                && let Ok(engine) = omega_config::LuaEngine::new()
-                && engine.configure_paths(&dir).is_ok()
-                && engine.load_plugins(&dir).is_ok()
-                && engine.load_file(&init_lua).is_ok()
-            {
-                (engine.config(), Some(engine))
-            } else {
-                (Config::load(), None)
-            }
-        }
-        None => (Config::load(), None),
-    };
+    let (config, lua_engine) = Config::load_with_engine();
 
     let mut tmux_client = RealTmuxClient;
 
@@ -134,13 +119,10 @@ fn main() -> Result<()> {
                 {
                     break None;
                 }
-                // Enter / Select
-                if key.code == KeyCode::Enter {
-                    break app.selected_item().cloned();
-                }
-
                 // Check custom keymaps
                 let key_str = match key.code {
+                    KeyCode::Enter => Some("<CR>".to_owned()),
+                    KeyCode::Esc => Some("<Esc>".to_owned()),
                     KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         Some(format!("<C-{c}>"))
                     }
@@ -150,6 +132,16 @@ fn main() -> Result<()> {
                     && let Some(action) = config.keymaps.get(&k)
                 {
                     match action.as_str() {
+                        "connect" => break app.selected_item().cloned(),
+                        "kill_session" => {
+                            if let Some(selected) = app.selected_item() {
+                                if selected.source == SessionSource::Tmux {
+                                    let _ = tmux_client.kill_session(&selected.name);
+                                }
+                                app.remove_selected();
+                            }
+                            continue;
+                        }
                         "select_next" => {
                             app.select_next();
                             continue;
@@ -176,6 +168,7 @@ fn main() -> Result<()> {
 
                 // Default Navigation & Preview Keymaps
                 match key.code {
+                    KeyCode::Enter => break app.selected_item().cloned(),
                     KeyCode::Up => app.select_prev(),
                     KeyCode::Down => app.select_next(),
                     KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -196,11 +189,22 @@ fn main() -> Result<()> {
                     KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.scroll_preview_down();
                     }
+                    KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Some(selected) = app.selected_item() {
+                            if selected.source == SessionSource::Tmux {
+                                let _ = tmux_client.kill_session(&selected.name);
+                            }
+                            app.remove_selected();
+                        }
+                    }
                     KeyCode::Backspace => {
                         app.query.pop();
                         app.refilter();
                     }
-                    KeyCode::Char(c) => {
+                    KeyCode::Char(c)
+                        if !key.modifiers.contains(KeyModifiers::CONTROL)
+                            && !key.modifiers.contains(KeyModifiers::ALT) =>
+                    {
                         app.query.push(c);
                         app.refilter();
                     }

@@ -82,4 +82,18 @@ fn test_naming_with_custom_hook_and_substitutions() {
         &substitutions,
     );
     assert_eq!(subst_name, "p-omega");
+
+    // 3. Regex substitution matching
+    let regex_substitutions = vec![omega_config::NameSubstitution {
+        find: r"^/Users/[^/]+/personal/projects/".to_owned(),
+        replace: "workspaces/".to_owned(),
+    }];
+    let regex_name = namer.resolve_full(
+        Path::new("/Users/gaurav/personal/projects/omega"),
+        2,
+        &[],
+        None,
+        &regex_substitutions,
+    );
+    assert_eq!(regex_name, "workspaces-omega");
 }

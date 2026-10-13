@@ -176,40 +176,36 @@ impl Config {
         None
     }
 
-    /// Loads configuration from standard paths (`init.lua` takes precedence over `config.json`).
-    pub fn load() -> Self {
+    /// Loads configuration alongside an optional active `LuaEngine` instance.
+    pub fn load_with_engine() -> (Self, Option<LuaEngine>) {
         if let Some(dir) = Self::config_dir() {
-            let init_lua = dir.join("init.lua");
-            if init_lua.exists()
-                && let Ok(engine) = LuaEngine::new()
-                && engine.configure_paths(&dir).is_ok()
-                && engine.load_plugins(&dir).is_ok()
-                && engine.load_file(&init_lua).is_ok()
-            {
-                return engine.config();
+            let has_lua = dir.join("init.lua").exists() || dir.join("plugins").is_dir();
+            if has_lua && let Ok(engine) = LuaEngine::from_config_dir(&dir) {
+                let cfg = engine.config();
+                return (cfg, Some(engine));
             }
 
             let config_json = dir.join("config.json");
             if config_json.exists()
                 && let Ok(cfg) = Self::load_from_path(&config_json)
             {
-                return cfg;
+                return (cfg, None);
             }
         }
 
-        Self::default()
+        (Self::default(), None)
+    }
+
+    /// Loads configuration from standard paths (`init.lua` takes precedence over `config.json`).
+    pub fn load() -> Self {
+        Self::load_with_engine().0
     }
 
     /// Loads configuration from an explicit file path (`.lua` or `.json`).
     pub fn load_from_path(path: &Path) -> std::io::Result<Self> {
         if path.extension().and_then(|s| s.to_str()) == Some("lua") {
-            let engine = LuaEngine::new().map_err(|e| std::io::Error::other(format!("{e}")))?;
-            if let Some(parent) = path.parent() {
-                let _ = engine.configure_paths(parent);
-                let _ = engine.load_plugins(parent);
-            }
-            engine
-                .load_file(path)
+            let dir = path.parent().unwrap_or(path);
+            let engine = LuaEngine::from_config_dir(dir)
                 .map_err(|e| std::io::Error::other(format!("{e}")))?;
             Ok(engine.config())
         } else {

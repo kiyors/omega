@@ -90,6 +90,21 @@ impl LuaEngine {
         })
     }
 
+    /// Bootstraps a Lua engine from a configuration directory:
+    /// - Adds `<config_dir>/lua/?.lua` and `<config_dir>/lua/?/init.lua` to `package.path`
+    /// - Executes all plugin scripts in `<config_dir>/plugins/*.lua`
+    /// - Loads `<config_dir>/init.lua` if it exists
+    pub fn from_config_dir(config_dir: &Path) -> LuaResult<Self> {
+        let engine = Self::new()?;
+        let _ = engine.configure_paths(config_dir);
+        let _ = engine.load_plugins(config_dir);
+        let init_lua = config_dir.join("init.lua");
+        if init_lua.exists() {
+            engine.load_file(&init_lua)?;
+        }
+        Ok(engine)
+    }
+
     /// Access the current parsed configuration snapshot.
     pub fn config(&self) -> Config {
         self.config

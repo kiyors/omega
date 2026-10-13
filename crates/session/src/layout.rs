@@ -10,44 +10,56 @@ pub fn match_wildcard<'a>(path: &Path, rules: &'a [WildcardRule]) -> Option<&'a 
     let home = std::env::var("HOME").ok();
 
     rules.iter().find(|rule| {
-        let pattern = if let Some(stripped) = rule.pattern.strip_prefix("~/") {
-            if let Some(h) = &home {
-                format!("{}/{}", h, stripped)
-            } else {
-                rule.pattern.clone()
+        if let Some(stripped_pat) = rule.pattern.strip_prefix("~/") {
+            if let Some(home_dir) = &home
+                && let Some(rest) = path_str.strip_prefix(home_dir.as_str())
+            {
+                let rest = rest.strip_prefix('/').unwrap_or(rest);
+                return glob_match(stripped_pat, rest);
             }
-        } else {
-            rule.pattern.clone()
-        };
+            return false;
+        }
 
-        glob_match(&pattern, &path_str)
+        glob_match(&rule.pattern, &path_str)
     })
 }
 
 fn glob_match(pattern: &str, path: &str) -> bool {
-    let pat_parts: Vec<&str> = pattern.split('/').collect();
-    let path_parts: Vec<&str> = path.split('/').collect();
+    let pat_trimmed = pattern.trim_matches('/');
+    let path_trimmed = path.trim_matches('/');
 
-    // Check recursive wildcard suffix (e.g. `/work/**`)
-    if pat_parts.last() == Some(&"**") {
-        let prefix_len = pat_parts.len().saturating_sub(1);
-        if path_parts.len() < prefix_len {
-            return false;
+    if let Some(prefix) = pat_trimmed.strip_suffix("/**") {
+        let prefix_clean = prefix.trim_matches('/');
+        let pat_iter = prefix_clean.split('/');
+        let mut path_iter = path_trimmed.split('/');
+
+        for p in pat_iter {
+            match path_iter.next() {
+                Some(t) if p == "*" || p == t => {}
+                _ => return false,
+            }
         }
-        return pat_parts[..prefix_len]
-            .iter()
-            .zip(path_parts[..prefix_len].iter())
-            .all(|(&p, &t)| p == "*" || p == t);
+        return true;
     }
 
-    if pat_parts.len() != path_parts.len() {
-        return false;
+    if pat_trimmed == "**" {
+        return true;
     }
 
-    pat_parts
-        .iter()
-        .zip(path_parts.iter())
-        .all(|(&p, &t)| p == "*" || p == t)
+    let mut pat_iter = pat_trimmed.split('/');
+    let mut path_iter = path_trimmed.split('/');
+
+    loop {
+        match (pat_iter.next(), path_iter.next()) {
+            (Some(p), Some(t)) => {
+                if p != "*" && p != t {
+                    return false;
+                }
+            }
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
 }
 
 /// Provisions a session with structured window and pane layouts using the given tmux client.

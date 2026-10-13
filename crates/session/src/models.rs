@@ -12,6 +12,16 @@ pub enum SessionSource {
 }
 
 impl SessionSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Tmux => "tmux",
+            Self::Alias => "alias",
+            Self::Config => "config",
+            Self::Git => "git",
+            Self::Zoxide => "zoxide",
+        }
+    }
+
     pub fn priority(&self) -> u8 {
         match self {
             Self::Tmux => 0,

@@ -28,6 +28,7 @@ omega-search  = { path = "crates/search", version = "0.1.0" }
 omega-session = { path = "crates/session", version = "0.1.0" }
 omega-tmux    = { path = "crates/tmux", version = "0.1.0" }
 ratatui       = "0.30.2"
+regex         = "1.11"
 serde         = { features = [ "derive" ], version = "1.0" }
 serde_json    = "1.0"
 tempfile      = "3"

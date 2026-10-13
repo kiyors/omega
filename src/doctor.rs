@@ -129,41 +129,31 @@ pub fn run_doctor<E: DoctorEnv>(env: &E, config_dir: Option<&Path>) -> DoctorRep
     match dir_to_check {
         Some(dir) => {
             let init_lua = dir.join("init.lua");
-            if init_lua.exists() {
-                match LuaEngine::new() {
+            let plugins_dir = dir.join("plugins");
+            if init_lua.exists() || plugins_dir.is_dir() {
+                match LuaEngine::from_config_dir(&dir) {
                     Ok(engine) => {
-                        let _ = engine.configure_paths(&dir);
-                        let _ = engine.load_plugins(&dir);
-                        match engine.load_file(&init_lua) {
-                            Ok(()) => {
-                                let cfg = engine.config();
-                                items.push(DoctorItem {
-                                    name: "config".to_owned(),
-                                    status: DoctorStatus::Ok,
-                                    message: format!(
-                                        "Valid init.lua at {} ({} aliases, {} wildcards)",
-                                        init_lua.display(),
-                                        cfg.aliases.len(),
-                                        cfg.wildcards.len()
-                                    ),
-                                });
-                            }
-                            Err(e) => {
-                                all_ok = false;
-                                items.push(DoctorItem {
-                                    name: "config".to_owned(),
-                                    status: DoctorStatus::Error,
-                                    message: format!("Error loading {}: {e}", init_lua.display()),
-                                });
-                            }
-                        }
+                        let cfg = engine.config();
+                        items.push(DoctorItem {
+                            name: "config".to_owned(),
+                            status: DoctorStatus::Ok,
+                            message: format!(
+                                "Valid configuration at {} ({} aliases, {} wildcards)",
+                                dir.display(),
+                                cfg.aliases.len(),
+                                cfg.wildcards.len()
+                            ),
+                        });
                     }
                     Err(e) => {
                         all_ok = false;
                         items.push(DoctorItem {
                             name: "config".to_owned(),
                             status: DoctorStatus::Error,
-                            message: format!("Failed to initialize Lua runtime: {e}"),
+                            message: format!(
+                                "Error loading configuration at {}: {e}",
+                                dir.display()
+                            ),
                         });
                     }
                 }

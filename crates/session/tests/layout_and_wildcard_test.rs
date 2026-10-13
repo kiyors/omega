@@ -40,6 +40,26 @@ fn test_match_wildcard_patterns() {
 }
 
 #[test]
+fn test_match_wildcard_tilde_home_expansion() {
+    unsafe {
+        std::env::set_var("HOME", "/mock/home");
+    }
+    let rules = vec![WildcardRule {
+        pattern: "~/projects/rust/*".to_owned(),
+        startup_command: Some("cargo test".to_owned()),
+        icon: Some("🦀".to_owned()),
+        windows: Vec::new(),
+    }];
+
+    let matched = match_wildcard(Path::new("/mock/home/projects/rust/omega"), &rules);
+    assert!(matched.is_some());
+    assert_eq!(matched.unwrap().icon.as_deref(), Some("🦀"));
+
+    let unmatched = match_wildcard(Path::new("/mock/other/projects/rust/omega"), &rules);
+    assert!(unmatched.is_none());
+}
+
+#[test]
 fn test_provision_session_layout_single_window_panes_and_layout() {
     let mut tmux = MockTmuxClient::new();
     let windows = vec![WindowLayoutConfig {

@@ -32,15 +32,11 @@ impl NamingPipeline {
         custom_hook_result: Option<&str>,
         substitutions: &[omega_config::NameSubstitution],
     ) -> String {
-        let mut path_str = path.to_string_lossy().into_owned();
-        for subst in substitutions {
-            if path_str.contains(&subst.find) {
-                path_str = path_str.replace(&subst.find, &subst.replace);
-            }
-        }
-        let effective_path = Path::new(&path_str);
+        let path_str = path.to_string_lossy();
+        let transformed_path = apply_substitutions(path_str.into_owned(), substitutions);
+        let effective_path = Path::new(&transformed_path);
 
-        let mut base_raw = if let Some(custom) = custom_hook_result {
+        let base_raw = if let Some(custom) = custom_hook_result {
             custom.to_owned()
         } else {
             let components: Vec<&str> = effective_path
@@ -65,13 +61,8 @@ impl NamingPipeline {
             }
         };
 
-        for subst in substitutions {
-            if base_raw.contains(&subst.find) {
-                base_raw = base_raw.replace(&subst.find, &subst.replace);
-            }
-        }
-
-        let sanitized = self.sanitize(&base_raw);
+        let final_raw = apply_substitutions(base_raw, substitutions);
+        let sanitized = self.sanitize(&final_raw);
 
         // Check collision
         let mut candidate_name = sanitized.clone();
@@ -126,4 +117,18 @@ impl NamingPipeline {
             })
             .collect()
     }
+}
+
+fn apply_substitutions(
+    mut target: String,
+    substitutions: &[omega_config::NameSubstitution],
+) -> String {
+    for subst in substitutions {
+        if let Ok(re) = regex::Regex::new(&subst.find) {
+            target = re.replace_all(&target, subst.replace.as_str()).into_owned();
+        } else {
+            target = target.replace(&subst.find, &subst.replace);
+        }
+    }
+    target
 }

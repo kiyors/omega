@@ -300,3 +300,30 @@ pub fn find_workspace_root(start_dir: Option<&std::path::Path>) -> std::io::Resu
         None => std::env::current_dir(),
     }
 }
+
+/// Discovers Git repository information (repo name and active branch) for a given path.
+/// Walks up the directory tree until a `.git` directory or linked worktree file is found.
+pub fn find_git_context(path: &Path) -> Option<omega_config::GitContext> {
+    let mut current = path;
+    loop {
+        let git_entry = current.join(".git");
+        if git_entry.is_dir() {
+            let repo = current.file_name()?.to_str()?.to_owned();
+            let head_path = git_entry.join("HEAD");
+            let head_content = std::fs::read_to_string(head_path).ok()?;
+            let branch = if let Some(ref_line) = head_content
+                .lines()
+                .find(|l| l.starts_with("ref: refs/heads/"))
+            {
+                ref_line.strip_prefix("ref: refs/heads/")?.trim().to_owned()
+            } else {
+                head_content.trim().chars().take(7).collect::<String>()
+            };
+            return Some(omega_config::GitContext { repo, branch });
+        } else if git_entry.is_file() {
+            let (repo, branch) = resolve_worktree_info(current, &git_entry)?;
+            return Some(omega_config::GitContext { repo, branch });
+        }
+        current = current.parent()?;
+    }
+}

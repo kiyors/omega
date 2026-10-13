@@ -77,3 +77,16 @@ Implemented test-first following Red-Green-Refactor across all pre-agreed seams:
   - `cargo test --workspace`: All test suites pass.
   - `cargo clippy --all-targets -- -D warnings`: Passes with zero warnings under strict clippy settings.
   - `cargo fmt --check`: Clean formatting across the entire codebase.
+
+---
+
+## 3. Code Review Refinements
+
+Following the two-axis code review against Standards (`AGENTS.md`) and Spec (`roadmap.md`), the following enhancements were implemented:
+- **Zero-Allocation Glob Matching**: Refactored `glob_match` and `match_wildcard` in `crates/session/src/layout.rs` using borrowed iterators and prefix stripping, removing all intermediate `Vec` and `String` heap allocations on candidate scoring loops (`AGENTS.md §5.1, §5.2`).
+- **Regex Path Substitutions**: Added `regex` engine support to `crates/session/src/naming.rs` allowing regex token matching (e.g. `^/Users/[^/]+/personal/`) and deduplicated the substitution execution logic.
+- **Standalone Plugins Auto-Loading**: Implemented `LuaEngine::from_config_dir` and `Config::load_with_engine` ensuring `plugins/*.lua` scripts execute on launch even when `init.lua` is absent.
+- **Git Context Propagation**: Implemented `find_git_context` in `crates/session/src/discovery.rs` and populated `GitContext` (repository name and branch) into `omega.session_name` callbacks in CLI and connect commands.
+- **Custom Sources in CLI**: Added `eval_custom_sources` integration in `omega connect` and `omega list` so dynamically registered Lua candidates are recognized across CLI subcommands.
+- **Domain String Key Projections**: Added `SessionSource::as_str(&self) -> &'static str` to replace inline enum matching.
+- **TUI Keymaps & Fallthrough Protection**: Wired `<CR>` (connect) and `<C-x>` / `kill_session` actions in the TUI event loop, while guarding unmapped control key events from inserting into query text.

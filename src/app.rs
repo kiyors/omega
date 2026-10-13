@@ -119,4 +119,18 @@ impl App {
             .get(self.selected)
             .map(|&idx| &self.items[idx])
     }
+
+    pub fn remove_selected(&mut self) -> Option<SessionCandidate> {
+        if self.filtered.is_empty() {
+            return None;
+        }
+        let original_idx = self.filtered.get(self.selected).copied()?;
+        if original_idx < self.items.len() {
+            let removed = self.items.remove(original_idx);
+            self.refilter();
+            Some(removed)
+        } else {
+            None
+        }
+    }
 }

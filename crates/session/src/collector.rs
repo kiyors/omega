@@ -117,17 +117,8 @@ impl SessionCollector {
                     && let Some(icon) = &rule.icon
                 {
                     cand.icon = Some(icon.clone());
-                } else {
-                    let key = match cand.source {
-                        SessionSource::Tmux => "tmux",
-                        SessionSource::Alias => "alias",
-                        SessionSource::Config => "config",
-                        SessionSource::Git => "git",
-                        SessionSource::Zoxide => "zoxide",
-                    };
-                    if let Some(icon) = config.icons.get(key) {
-                        cand.icon = Some(icon.clone());
-                    }
+                } else if let Some(icon) = config.icons.get(cand.source.as_str()) {
+                    cand.icon = Some(icon.clone());
                 }
             }
         }

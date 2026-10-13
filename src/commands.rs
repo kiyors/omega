@@ -39,7 +39,21 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             command,
         } => {
             // Check if target matches an existing candidate or alias
-            let candidates = fetch_candidates_or_fallback(None, config);
+            let mut candidates = fetch_candidates_or_fallback(None, config);
+            if let Some(eng) = engine
+                && let Ok(custom) = eng.eval_custom_sources()
+            {
+                for item in custom {
+                    let mut cand = omega_session::SessionCandidate::new(
+                        item.name,
+                        item.path,
+                        SessionSource::Config,
+                    );
+                    cand.icon = item.icon;
+                    candidates.push(cand);
+                }
+            }
+
             let matched = candidates
                 .iter()
                 .find(|c| c.name == target || c.alias.as_deref() == Some(&target));
@@ -58,8 +72,10 @@ pub fn execute_command_with_engine<T: TmuxClient>(
                                 .filter(|c| c.source == SessionSource::Tmux)
                                 .map(|c| (c.name.as_str(), c.path.as_path()))
                                 .collect();
-                            let custom_name =
-                                engine.and_then(|e| e.call_session_name_hook(&target_path, None));
+                            let git_ctx = omega_session::find_git_context(&target_path);
+                            let custom_name = engine.and_then(|e| {
+                                e.call_session_name_hook(&target_path, git_ctx.as_ref())
+                            });
                             let name = namer.resolve_full(
                                 &target_path,
                                 config.dir_length,
@@ -95,6 +111,19 @@ pub fn execute_command_with_engine<T: TmuxClient>(
             format,
         } => {
             let mut candidates = fetch_candidates_or_fallback(None, config);
+            if let Some(eng) = engine
+                && let Ok(custom) = eng.eval_custom_sources()
+            {
+                for item in custom {
+                    let mut cand = omega_session::SessionCandidate::new(
+                        item.name,
+                        item.path,
+                        SessionSource::Config,
+                    );
+                    cand.icon = item.icon;
+                    candidates.push(cand);
+                }
+            }
 
             if only_tmux || only_git || only_zoxide {
                 candidates.retain(|c| {
@@ -377,7 +406,8 @@ fn resolve_tmux_session_name<T: TmuxClient>(
         .iter()
         .map(|s| (s.name.as_str(), s.path.as_path()))
         .collect();
-    let custom_name = engine.and_then(|e| e.call_session_name_hook(target_path, None));
+    let git_ctx = omega_session::find_git_context(target_path);
+    let custom_name = engine.and_then(|e| e.call_session_name_hook(target_path, git_ctx.as_ref()));
     namer.resolve_full(
         target_path,
         config.dir_length,
