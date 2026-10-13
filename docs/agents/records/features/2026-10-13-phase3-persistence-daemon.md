@@ -56,7 +56,6 @@ Implemented test-first following Red-Green-Refactor across 5 isolated test seams
   - `test_store_save_named_and_load`: Verifies named snapshots save to `<name>.json` and load cleanly.
   - `test_auto_save_filename_follows_spec_format`: Verifies auto-save filename format (`snapshot-YYYY-MM-DD-HHMMSS.json`).
   - `test_store_auto_save_creates_latest_pointer`: Verifies atomic `latest.json` pointer creation.
-  - `test_store_list_snapshots_reports_kinds`: Verifies summary categorization into `Named` vs `Auto` snapshots.
   - `test_store_rotation_keeps_last_ten_and_exempts_named`: Verifies 10-save rolling retention prunes oldest auto-saves while preserving named snapshots.
   - `test_latest_pointer_resolves_to_newest_auto_save`: Verifies resolving `None` tag points to the newest auto-save.
 
@@ -92,3 +91,19 @@ Implemented test-first following Red-Green-Refactor across 5 isolated test seams
   - `test_cli_parse_daemon_serve_is_hidden_but_available`: Verifies internal `omega daemon serve` subcommand.
 
 Total: 54 unit and integration tests passing. `cargo clippy --all-targets -- -D warnings` clean (0 warnings). `cargo fmt --check` clean.
+
+---
+
+## 3. Post-Review Amendments (2026-10-13)
+
+A two-axis (standards/spec) review of the Phase 3 diff drove the following fixes, applied on top of the crate decomposition recorded in `2026-10-13-workspace-crate-decomposition.md`:
+
+1. **Lifecycle hooks (spec gap)**: tmux exposes no `server-exit` hook, so the roadmap's "tmux server exit hooks (clean shutdown / detach)" trigger is implemented with tmux `client-detached` and `session-closed` global hooks, installed best-effort on `omega daemon start` (retried by the background worker until a server accepts them) and removed on `omega daemon stop`. Each fires `omega save` via `run-shell -b`.
+2. **Auto-save moved off the accept loop (spec gap)**: the 15-minute auto-save now runs on the background worker thread next to cache polling, so socket queries never block on snapshot writes.
+3. **Selective restore of an unknown session name** now returns a clear error instead of silently no-opping.
+4. **Atomic snapshot writes** use uniquely named temp files (pid + nanos) so concurrent savers cannot collide and crashes cannot truncate a snapshot behind the `latest.json` pointer.
+5. **Socket fallback** now uses the real uid (`/tmp/omega-<uid>.sock`) matching the documented behavior.
+6. **Removed the test-only `SnapshotStore::list_snapshots` / `SnapshotSummary` API** (speculative generality; nothing consumed it).
+7. **CI now runs `cargo test --workspace`** so member-crate tests execute; plain `cargo test` in this root package only covered the `omega` binary.
+8. **Hermetic end-to-end verification** (`tests/persistence_e2e_test.rs`): the roadmap Phase 3 criteria are exercised against a real isolated tmux server — save, kill-server, selective/full/overwrite/latest-pointer restore with exact window hierarchy, pane paths, and geometry; daemon start/status/stop with socket-cached `omega list` and direct-scan fallback; lifecycle hook install/removal. Hermetic isolation uses `TMUX_TMPDIR`, a `PATH` shim injecting `tmux -f /dev/null` (user tmux rename hooks otherwise rename hermetically created sessions), and temp `XDG_DATA_HOME`/`XDG_RUNTIME_DIR`. Tests skip gracefully on non-unix or without tmux.
+9. **Glossary wording**: the Hot Candidate Cache entry now cites the roadmap's < 5ms figure instead of "sub-millisecond".

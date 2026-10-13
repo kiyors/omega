@@ -10,6 +10,6 @@ pub use daemon::{
 };
 pub use snapshot::{
     AUTO_SAVE_PREFIX, AUTO_SAVE_RETENTION, LATEST_POINTER, PaneSnapshot, RestoreSummary,
-    SessionSnapshotRecord, Snapshot, SnapshotManager, SnapshotStore, SnapshotSummary,
-    WindowSnapshot, break_down_timestamp,
+    SessionSnapshotRecord, Snapshot, SnapshotManager, SnapshotStore, WindowSnapshot,
+    break_down_timestamp,
 };

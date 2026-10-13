@@ -70,13 +70,6 @@ pub const LATEST_POINTER: &str = "latest.json";
 /// Prefix shared by all auto-save snapshot files.
 pub const AUTO_SAVE_PREFIX: &str = "snapshot-";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SnapshotSummary {
-    pub name: String,
-    pub path: PathBuf,
-    pub is_auto: bool,
-}
-
 pub struct SnapshotStore {
     base_dir: PathBuf,
 }
@@ -105,6 +98,10 @@ impl SnapshotStore {
     /// Persists a snapshot. Tagged saves are stored as `<tag>.json` and are
     /// exempt from rotation; untagged saves are auto-saves named
     /// `snapshot-YYYY-MM-DD-HHMMSS.json` and participate in the rolling window.
+    ///
+    /// Files are written atomically (uniquely named temp file + rename) so a
+    /// crash mid-write can never leave a truncated snapshot behind and
+    /// concurrent savers never collide on a temp path.
     pub fn save_snapshot(&self, snapshot: &Snapshot, tag: Option<&str>) -> io::Result<PathBuf> {
         fs::create_dir_all(&self.base_dir)?;
 
@@ -113,9 +110,7 @@ impl SnapshotStore {
 
         if let Some(name) = tag {
             let target_path = self.base_dir.join(tagged_filename(name));
-            let tmp_path = target_path.with_extension("tmp");
-            fs::write(&tmp_path, content.as_bytes())?;
-            fs::rename(&tmp_path, &target_path)?;
+            write_atomic(&target_path, content.as_bytes())?;
             Ok(target_path)
         } else {
             let base_name = format!("{AUTO_SAVE_PREFIX}{}", current_timestamp_slug());
@@ -126,9 +121,7 @@ impl SnapshotStore {
                 counter = counter.saturating_add(1);
             }
 
-            let tmp_path = target_path.with_extension("tmp");
-            fs::write(&tmp_path, content.as_bytes())?;
-            fs::rename(&tmp_path, &target_path)?;
+            write_atomic(&target_path, content.as_bytes())?;
 
             self.update_latest_pointer(&target_path)?;
             self.rotate_auto_saves(AUTO_SAVE_RETENTION)?;
@@ -184,42 +177,15 @@ impl SnapshotStore {
         Ok(())
     }
 
-    /// Lists all retained snapshots, sorted by file name.
-    pub fn list_snapshots(&self) -> io::Result<Vec<SnapshotSummary>> {
-        if !self.base_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut list = Vec::new();
-        for entry in fs::read_dir(&self.base_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "json") {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name == LATEST_POINTER {
-                    continue;
-                }
-                let is_auto = name.starts_with(AUTO_SAVE_PREFIX);
-                list.push(SnapshotSummary {
-                    name,
-                    path,
-                    is_auto,
-                });
-            }
-        }
-
-        list.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(list)
-    }
-
     /// Atomically points `latest.json` at the newest auto-save.
     fn update_latest_pointer(&self, target_path: &Path) -> io::Result<()> {
         let latest_path = self.base_dir.join(LATEST_POINTER);
 
         #[cfg(unix)]
         {
-            let tmp_link = self.base_dir.join(format!("{LATEST_POINTER}.tmp"));
-            let _ = fs::remove_file(&tmp_link);
+            let tmp_link = self
+                .base_dir
+                .join(format!("{LATEST_POINTER}.{}.tmp", unix_now_nanos()));
             let filename = target_path
                 .file_name()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "Invalid file name"))?;
@@ -230,7 +196,9 @@ impl SnapshotStore {
 
         #[cfg(not(unix))]
         {
-            let tmp_copy = self.base_dir.join(format!("{LATEST_POINTER}.tmp"));
+            let tmp_copy = self
+                .base_dir
+                .join(format!("{LATEST_POINTER}.{}.tmp", unix_now_nanos()));
             fs::copy(target_path, &tmp_copy)?;
             fs::rename(&tmp_copy, &latest_path)?;
             Ok(())
@@ -259,9 +227,25 @@ fn current_timestamp_iso() -> String {
     format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
 }
 
+/// Writes `content` to `path` atomically via a uniquely named temp file and a
+/// rename, so concurrent savers never collide and readers never observe a
+/// partially written snapshot.
+fn write_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
+    let tmp = path.with_extension(format!("{}.{}.tmp", std::process::id(), unix_now_nanos()));
+    fs::write(&tmp, content)?;
+    fs::rename(&tmp, path)
+}
+
 fn current_timestamp_slug() -> String {
     let (y, m, d, hh, mm, ss) = break_down_timestamp(unix_now_secs());
     format!("{y:04}-{m:02}-{d:02}-{hh:02}{mm:02}{ss:02}")
+}
+
+fn unix_now_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default()
 }
 
 fn unix_now_secs() -> u64 {

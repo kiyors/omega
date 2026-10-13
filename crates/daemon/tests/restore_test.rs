@@ -197,6 +197,33 @@ fn test_restore_rebuilds_windows_splits_layouts_and_commands() {
 }
 
 #[test]
+fn test_selective_restore_unknown_session_errors() {
+    let mut mock = MockTmuxClient::new();
+
+    let snapshot = Snapshot {
+        version: 1,
+        created_at: "2026-10-13T07:00:00Z".to_string(),
+        sessions: vec![SessionSnapshotRecord {
+            name: "known".to_string(),
+            path: PathBuf::from("/repo/known"),
+            windows: vec![],
+        }],
+    };
+
+    let err = SnapshotManager::new()
+        .restore(&mut mock, &snapshot, Some("ghost"), false)
+        .expect_err("unknown selective target must error");
+    assert!(
+        err.to_string().contains("ghost"),
+        "error names the missing session: {err}"
+    );
+    assert!(
+        mock.created_sessions.is_empty(),
+        "no session may be created for an unknown target"
+    );
+}
+
+#[test]
 fn test_restore_session_without_windows_creates_bare_session() {
     let mut mock = MockTmuxClient::new();
 

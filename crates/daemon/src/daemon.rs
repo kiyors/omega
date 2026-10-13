@@ -84,6 +84,8 @@ pub struct DaemonServer {
     start_time: Instant,
     config: Config,
     final_saved: AtomicBool,
+    /// Ensures the tmux lifecycle hooks are installed at most once.
+    lifecycle_hooks_installed: AtomicBool,
 }
 
 impl DaemonServer {
@@ -96,6 +98,7 @@ impl DaemonServer {
             start_time: Instant::now(),
             config,
             final_saved: AtomicBool::new(false),
+            lifecycle_hooks_installed: AtomicBool::new(false),
         }
     }
 
@@ -106,16 +109,28 @@ impl DaemonServer {
             start_time: Instant::now(),
             config: Config::default(),
             final_saved: AtomicBool::new(false),
+            lifecycle_hooks_installed: AtomicBool::new(true),
         }
     }
 
     pub fn default_socket_path() -> PathBuf {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-            PathBuf::from(runtime_dir).join("omega.sock")
-        } else if let Ok(user) = std::env::var("USER") {
-            PathBuf::from(format!("/tmp/omega-{user}.sock"))
-        } else {
-            PathBuf::from("/tmp/omega.sock")
+            return PathBuf::from(runtime_dir).join("omega.sock");
+        }
+
+        #[cfg(unix)]
+        {
+            // SAFETY: getuid() is always safe to call.
+            let uid = unsafe { libc::getuid() };
+            PathBuf::from(format!("/tmp/omega-{uid}.sock"))
+        }
+
+        #[cfg(not(unix))]
+        {
+            match std::env::var("USER") {
+                Ok(user) => PathBuf::from(format!("/tmp/omega-{user}.sock")),
+                Err(_) => PathBuf::from("/tmp/omega.sock"),
+            }
         }
     }
 
@@ -140,7 +155,7 @@ impl DaemonServer {
 
         // Graceful termination: snapshot state exactly once on server exit.
         if !self.final_saved.swap(true, Ordering::SeqCst) {
-            let _ = self.save_snapshot_now(None);
+            let _ = save_snapshot_now(None);
         }
 
         Ok(())
@@ -160,32 +175,49 @@ impl DaemonServer {
 
         let stop_requested = Arc::new(AtomicBool::new(false));
 
-        // Decouple candidate polling from accept loop: background scanning thread
+        // Background worker: hot-cache polling, the periodic auto-save timer,
+        // and tmux lifecycle-hook maintenance, all decoupled from the accept
+        // loop so queries never block on scans or snapshot writes.
         let worker_running = Arc::clone(running);
         let worker_terminate = Arc::clone(terminate);
         let worker_stop = Arc::clone(&stop_requested);
         let worker_candidates = Arc::clone(&self.candidates);
         let worker_config = self.config.clone();
+        let worker_hooks = Arc::new(AtomicBool::new(
+            self.lifecycle_hooks_installed.load(Ordering::SeqCst),
+        ));
 
         let worker_handle = std::thread::spawn(move || {
             let collector = SessionCollector::new();
             let mut last_scan = Instant::now();
+            let mut last_save = Instant::now();
             while worker_running.load(Ordering::SeqCst)
                 && !worker_terminate.load(Ordering::SeqCst)
                 && !worker_stop.load(Ordering::SeqCst)
             {
                 std::thread::sleep(Duration::from_millis(100));
+
+                let now = Instant::now();
                 if last_scan.elapsed() >= CACHE_REFRESH_INTERVAL {
                     let fresh = collector.collect_from_system(&worker_config);
                     if let Ok(mut lock) = worker_candidates.write() {
                         *lock = fresh;
                     }
-                    last_scan = Instant::now();
+                    last_scan = now;
+                }
+
+                // Retry the tmux lifecycle hooks until a server accepts them
+                // (the daemon may start before any tmux server exists).
+                if !worker_hooks.load(Ordering::SeqCst) && install_lifecycle_hooks() {
+                    worker_hooks.store(true, Ordering::SeqCst);
+                }
+
+                if autosave_due(last_save, now) {
+                    let _ = save_snapshot_now(None);
+                    last_save = now;
                 }
             }
         });
-
-        let mut last_save = Instant::now();
 
         while running.load(Ordering::SeqCst)
             && !stop_requested.load(Ordering::SeqCst)
@@ -216,13 +248,6 @@ impl DaemonServer {
                     let _ = fs::remove_file(&self.socket_path);
                     return Err(e);
                 }
-            }
-
-            // Periodic auto-save
-            let now = Instant::now();
-            if autosave_due(last_save, now) {
-                let _ = self.save_snapshot_now(None);
-                last_save = now;
             }
         }
 
@@ -280,7 +305,7 @@ impl DaemonServer {
                             candidates.read().map(|c| c.clone()).unwrap_or_default(),
                         ),
                         DaemonRequest::SaveSnapshot { tag } => {
-                            match Self::save_snapshot_direct(tag.as_deref()) {
+                            match save_snapshot_now(tag.as_deref()) {
                                 Ok(path) => DaemonResponse::SnapshotSaved(path),
                                 Err(e) => DaemonResponse::Error(format!("{e}")),
                             }
@@ -325,22 +350,21 @@ impl DaemonServer {
             Err(_) => false,
         }
     }
+}
 
-    fn save_snapshot_now(&self, tag: Option<&str>) -> io::Result<PathBuf> {
-        Self::save_snapshot_direct(tag)
+/// Captures the live tmux state and writes an auto (or tagged) snapshot.
+/// Empty auto-saves are skipped so the store is never polluted by no-op
+/// snapshots (e.g. periodic autosave with no tmux server running).
+fn save_snapshot_now(tag: Option<&str>) -> io::Result<PathBuf> {
+    let store = SnapshotStore::new(SnapshotStore::default_dir());
+    let tmux = RealTmuxClient;
+    let manager = SnapshotManager::new();
+    let snap = manager.capture(&tmux)?;
+    if tag.is_none() && snap.sessions.is_empty() {
+        // Auto-save protection: avoid polluting store with empty snapshots
+        return Ok(PathBuf::new());
     }
-
-    fn save_snapshot_direct(tag: Option<&str>) -> io::Result<PathBuf> {
-        let store = SnapshotStore::new(SnapshotStore::default_dir());
-        let tmux = RealTmuxClient;
-        let manager = SnapshotManager::new();
-        let snap = manager.capture(&tmux)?;
-        if tag.is_none() && snap.sessions.is_empty() {
-            // Auto-save protection: avoid polluting store with empty snapshots
-            return Ok(PathBuf::new());
-        }
-        store.save_snapshot(&snap, tag)
-    }
+    store.save_snapshot(&snap, tag)
 }
 
 // ---------------------------------------------------------------------------
@@ -512,6 +536,8 @@ pub fn daemon_start(socket_path: &Path, serve_args: &[&str]) -> io::Result<u32> 
     let deadline = Instant::now() + START_READY_TIMEOUT;
     while Instant::now() < deadline {
         if ping_socket(socket_path).is_ok() {
+            // Lifecycle trigger: snapshot tmux state on clean detach/shutdown.
+            install_lifecycle_hooks();
             return Ok(pid);
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -556,6 +582,7 @@ pub fn daemon_stop(socket_path: &Path) -> io::Result<()> {
 
     let _ = fs::remove_file(socket_path);
     let _ = fs::remove_file(pid_path(socket_path));
+    remove_lifecycle_hooks();
     Ok(())
 }
 
@@ -581,6 +608,35 @@ fn ping_socket(socket_path: &Path) -> io::Result<DaemonStatus> {
     DaemonClient::connect(Some(socket_path))
         .ok_or_else(|| Error::other("daemon socket not reachable"))?
         .ping()
+}
+
+/// Installs tmux lifecycle hooks (`client-detached`, `session-closed`) so tmux
+/// snapshots state on clean detach and session shutdown — the roadmap's
+/// "tmux server exit hooks (clean shutdown / detach)" trigger; tmux exposes no
+/// server-exit hook of its own. Best-effort: fails quietly with no server.
+#[cfg(unix)]
+fn install_lifecycle_hooks() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let command = format!("run-shell -b '{}' save", exe.display());
+    ["client-detached", "session-closed"].iter().all(|hook| {
+        std::process::Command::new("tmux")
+            .args(["set-hook", "-g", hook, &command])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Removes the tmux lifecycle hooks installed while the daemon was running.
+#[cfg(unix)]
+fn remove_lifecycle_hooks() {
+    for hook in ["client-detached", "session-closed"] {
+        let _ = std::process::Command::new("tmux")
+            .args(["set-hook", "-gu", hook])
+            .output();
+    }
 }
 
 fn read_pid(socket_path: &Path) -> Option<u32> {

@@ -48,7 +48,7 @@ An optional lightweight background process that listens on a Unix domain socket 
 
 ### Hot Candidate Cache
 
-The daemon-maintained in-memory set of session candidates, refreshed on a fixed background interval, enabling sub-millisecond query responses over the Unix socket for CLI and TUI consumers.
+The daemon-maintained in-memory set of session candidates, refreshed on a fixed background interval, enabling the < 5ms query responses over the Unix socket specified in the roadmap for CLI and TUI consumers.
 
 ### Auto-Save
 
