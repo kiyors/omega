@@ -90,4 +90,44 @@ pub enum Commands {
         #[arg(short, long)]
         dir: Option<PathBuf>,
     },
+
+    /// Capture a snapshot of all active tmux sessions and layouts
+    Save {
+        /// Optional named tag for persistent snapshot
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+
+    /// Resurrect sessions from a snapshot
+    Restore {
+        /// Optional session name to selectively restore
+        session: Option<String>,
+
+        /// Optional named snapshot tag to restore from
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// Overwrite/recreate existing tmux sessions
+        #[arg(short = 'f', long = "overwrite")]
+        overwrite: bool,
+    },
+
+    /// Manage background cache daemon
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
+}
+
+#[derive(Subcommand, Debug, PartialEq, Eq, Clone)]
+pub enum DaemonAction {
+    /// Start the background daemon
+    Start,
+    /// Stop the running background daemon
+    Stop,
+    /// Query status of the background daemon
+    Status,
+    /// Internal foreground daemon server loop
+    #[command(hide = true)]
+    Serve,
 }

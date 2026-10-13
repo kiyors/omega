@@ -985,8 +985,11 @@ dependencies = [
 name = "omega-session"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "omega-config",
  "serde",
+ "serde_json",
+ "signal-hook",
  "tempfile",
  "walkdir",
 ]

@@ -1,12 +1,19 @@
-use crate::cli::Commands;
+use crate::cli::{Commands, DaemonAction};
 use color_eyre::Result;
 use omega_config::Config;
+use omega_session::daemon::{
+    DaemonServer, daemon_start, daemon_status, daemon_stop, fetch_candidates_or_fallback,
+};
 use omega_session::find_workspace_root;
 use omega_session::naming::NamingPipeline;
+use omega_session::snapshot::SnapshotStore;
+use omega_session::tmux::SnapshotManager;
 use omega_session::{SessionCollector, SessionSource, TmuxActionRunner, TmuxClient};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub fn execute_command<T: TmuxClient>(
     command: Commands,
@@ -51,7 +58,12 @@ pub fn execute_command<T: TmuxClient>(
 
             if switch && tmux.is_inside_tmux() {
                 if !tmux.has_session(&session_name) {
-                    tmux.create_session(&session_name, &session_path, command.as_deref())?;
+                    tmux.create_session(
+                        &session_name,
+                        &session_name,
+                        &session_path,
+                        command.as_deref(),
+                    )?;
                 }
                 tmux.switch_client(&session_name)?;
             } else {
@@ -66,7 +78,7 @@ pub fn execute_command<T: TmuxClient>(
             json,
             format,
         } => {
-            let mut candidates = collector.collect_from_system(config);
+            let mut candidates = fetch_candidates_or_fallback(None, config);
 
             if only_tmux || only_git || only_zoxide {
                 candidates.retain(|c| {
@@ -158,6 +170,73 @@ pub fn execute_command<T: TmuxClient>(
             let name = resolve_tmux_session_name(&namer, &canonical, config.dir_length, tmux);
             runner.connect(tmux, &name, &canonical, None)?;
         }
+
+        Commands::Save { name } => {
+            let manager = SnapshotManager::new();
+            let snapshot = manager.capture(tmux)?;
+            let store = SnapshotStore::new(SnapshotStore::default_dir());
+            let path = store.save_snapshot(&snapshot, name.as_deref())?;
+            println!("Saved snapshot to '{}'", path.display());
+        }
+
+        Commands::Restore {
+            session,
+            name,
+            overwrite,
+        } => {
+            let store = SnapshotStore::new(SnapshotStore::default_dir());
+            let snapshot = store.load_snapshot(name.as_deref())?;
+            let manager = SnapshotManager::new();
+            let summary = manager.restore(tmux, &snapshot, session.as_deref(), overwrite)?;
+
+            if !summary.restored.is_empty() {
+                println!("Restored sessions: {}", summary.restored.join(", "));
+            }
+            if !summary.skipped.is_empty() {
+                println!(
+                    "Skipped active sessions (use --overwrite to force): {}",
+                    summary.skipped.join(", ")
+                );
+            }
+        }
+
+        Commands::Daemon { action } => match action {
+            DaemonAction::Start => {
+                let sock = DaemonServer::default_socket_path();
+                match daemon_start(&sock, &["daemon", "serve"]) {
+                    Ok(pid) => println!("Started omega daemon (PID {pid})"),
+                    Err(e) => eprintln!("Failed to start daemon: {e}"),
+                }
+            }
+            DaemonAction::Stop => {
+                let sock = DaemonServer::default_socket_path();
+                if let Err(e) = daemon_stop(&sock) {
+                    eprintln!("Failed to stop daemon: {e}");
+                } else {
+                    println!("Omega daemon stopped");
+                }
+            }
+            DaemonAction::Status => {
+                let sock = DaemonServer::default_socket_path();
+                match daemon_status(&sock) {
+                    Some(status) => {
+                        println!(
+                            "Omega daemon is running (PID {}, uptime {}s, {} cached sessions)",
+                            status.pid, status.uptime_secs, status.candidate_count
+                        );
+                    }
+                    None => {
+                        println!("Omega daemon is not running");
+                    }
+                }
+            }
+            DaemonAction::Serve => {
+                let sock = DaemonServer::default_socket_path();
+                let server = DaemonServer::new(sock, config.clone());
+                let running = Arc::new(AtomicBool::new(true));
+                server.listen_until(running)?;
+            }
+        },
     }
 
     Ok(())

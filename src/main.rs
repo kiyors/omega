@@ -7,9 +7,8 @@ use omega::commands::execute_command;
 use omega::event::{Event, EventHandler};
 use omega::ui;
 use omega_config::Config;
-use omega_session::{
-    PreviewGenerator, RealTmuxClient, SessionCandidate, SessionCollector, TmuxActionRunner,
-};
+use omega_session::daemon::fetch_candidates_or_fallback;
+use omega_session::{PreviewGenerator, RealTmuxClient, SessionCandidate, TmuxActionRunner};
 use std::time::Duration;
 
 fn main() -> Result<()> {
@@ -24,8 +23,7 @@ fn main() -> Result<()> {
     }
 
     // Launch interactive TUI picker
-    let collector = SessionCollector::new();
-    let sessions = collector.collect_from_system(&config);
+    let sessions = fetch_candidates_or_fallback(None, &config);
 
     let initial_query = if cli.query.is_empty() {
         None
