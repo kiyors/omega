@@ -32,9 +32,7 @@ fn main() -> Result<()> {
     };
 
     let mut app = App::new(sessions, initial_query);
-    app.preview_enabled = config.tui.preview;
-    app.preview_width = config.tui.preview_width;
-    app.preview_border = config.tui.preview_border.clone();
+    app.apply_tui_config(&config.tui);
 
     // Asynchronous debounced preview worker channel
     let (req_tx, req_rx) = std::sync::mpsc::channel::<Option<SessionCandidate>>();

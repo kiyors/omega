@@ -2,6 +2,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
 /// Parses raw text containing ANSI SGR escape codes into Ratatui `Text` using borrowed string slices.
+#[must_use]
 pub fn parse_ansi_to_text(input: &str) -> Text<'_> {
     let mut lines = Vec::new();
     let mut current_style = Style::default();
@@ -13,45 +14,50 @@ pub fn parse_ansi_to_text(input: &str) -> Text<'_> {
         let mut chunk_start = 0;
 
         while i < bytes.len() {
-            if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+            if bytes.get(i).copied() == Some(0x1b)
+                && bytes.get(i.saturating_add(1)).copied() == Some(b'[')
+            {
                 // Emit preceding text chunk if any
-                if chunk_start < i {
-                    let text = &line_str[chunk_start..i];
-                    if !text.is_empty() {
-                        spans.push(Span::styled(text, current_style));
-                    }
+                if chunk_start < i
+                    && let Some(text) = line_str.get(chunk_start..i)
+                    && !text.is_empty()
+                {
+                    spans.push(Span::styled(text, current_style));
                 }
 
                 // Look for sequence terminator (usually 'm' for SGR, or other command letter)
-                let seq_start = i + 2;
+                let seq_start = i.saturating_add(2);
                 let mut seq_end = seq_start;
-                while seq_end < bytes.len() && !bytes[seq_end].is_ascii_alphabetic() {
-                    seq_end += 1;
+                while seq_end < bytes.len()
+                    && !bytes.get(seq_end).is_some_and(u8::is_ascii_alphabetic)
+                {
+                    seq_end = seq_end.saturating_add(1);
                 }
 
                 if seq_end < bytes.len() {
-                    let cmd = bytes[seq_end];
-                    if cmd == b'm' {
-                        let params_str = &line_str[seq_start..seq_end];
+                    let cmd = bytes.get(seq_end).copied();
+                    if cmd == Some(b'm')
+                        && let Some(params_str) = line_str.get(seq_start..seq_end)
+                    {
                         current_style = update_sgr_style(current_style, params_str);
                     }
-                    i = seq_end + 1;
+                    i = seq_end.saturating_add(1);
                     chunk_start = i;
                 } else {
                     // Unterminated sequence: skip ESC and continue
-                    i += 1;
+                    i = i.saturating_add(1);
                     chunk_start = i;
                 }
             } else {
-                i += 1;
+                i = i.saturating_add(1);
             }
         }
 
-        if chunk_start < bytes.len() {
-            let text = &line_str[chunk_start..];
-            if !text.is_empty() {
-                spans.push(Span::styled(text, current_style));
-            }
+        if chunk_start < bytes.len()
+            && let Some(text) = line_str.get(chunk_start..)
+            && !text.is_empty()
+        {
+            spans.push(Span::styled(text, current_style));
         }
 
         if spans.is_empty() {
@@ -76,7 +82,8 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
 
     let mut idx = 0;
     while idx < codes.len() {
-        match codes[idx] {
+        let code = codes.get(idx).copied().unwrap_or_default();
+        match code {
             0 => style = Style::default(),
             1 => style = style.add_modifier(Modifier::BOLD),
             2 => style = style.add_modifier(Modifier::DIM),
@@ -103,12 +110,24 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
             37 => style = style.fg(Color::White),
             38 => {
                 // Extended FG: 38;5;n or 38;2;r;g;b
-                if idx + 2 < codes.len() && codes[idx + 1] == 5 {
-                    style = style.fg(Color::Indexed(codes[idx + 2]));
-                    idx += 2;
-                } else if idx + 4 < codes.len() && codes[idx + 1] == 2 {
-                    style = style.fg(Color::Rgb(codes[idx + 2], codes[idx + 3], codes[idx + 4]));
-                    idx += 4;
+                if idx.saturating_add(2) < codes.len()
+                    && codes.get(idx.saturating_add(1)).copied() == Some(5)
+                {
+                    if let Some(&n) = codes.get(idx.saturating_add(2)) {
+                        style = style.fg(Color::Indexed(n));
+                    }
+                    idx = idx.saturating_add(2);
+                } else if idx.saturating_add(4) < codes.len()
+                    && codes.get(idx.saturating_add(1)).copied() == Some(2)
+                {
+                    if let (Some(&r), Some(&g), Some(&b)) = (
+                        codes.get(idx.saturating_add(2)),
+                        codes.get(idx.saturating_add(3)),
+                        codes.get(idx.saturating_add(4)),
+                    ) {
+                        style = style.fg(Color::Rgb(r, g, b));
+                    }
+                    idx = idx.saturating_add(4);
                 }
             }
             39 => style.fg = None,
@@ -124,12 +143,24 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
             47 => style = style.bg(Color::White),
             48 => {
                 // Extended BG: 48;5;n or 48;2;r;g;b
-                if idx + 2 < codes.len() && codes[idx + 1] == 5 {
-                    style = style.bg(Color::Indexed(codes[idx + 2]));
-                    idx += 2;
-                } else if idx + 4 < codes.len() && codes[idx + 1] == 2 {
-                    style = style.bg(Color::Rgb(codes[idx + 2], codes[idx + 3], codes[idx + 4]));
-                    idx += 4;
+                if idx.saturating_add(2) < codes.len()
+                    && codes.get(idx.saturating_add(1)).copied() == Some(5)
+                {
+                    if let Some(&n) = codes.get(idx.saturating_add(2)) {
+                        style = style.bg(Color::Indexed(n));
+                    }
+                    idx = idx.saturating_add(2);
+                } else if idx.saturating_add(4) < codes.len()
+                    && codes.get(idx.saturating_add(1)).copied() == Some(2)
+                {
+                    if let (Some(&r), Some(&g), Some(&b)) = (
+                        codes.get(idx.saturating_add(2)),
+                        codes.get(idx.saturating_add(3)),
+                        codes.get(idx.saturating_add(4)),
+                    ) {
+                        style = style.bg(Color::Rgb(r, g, b));
+                    }
+                    idx = idx.saturating_add(4);
                 }
             }
             49 => style.bg = None,
@@ -156,7 +187,7 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
 
             _ => {}
         }
-        idx += 1;
+        idx = idx.saturating_add(1);
     }
 
     style

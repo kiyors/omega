@@ -71,6 +71,42 @@ pub struct TuiConfig {
 
     #[serde(default = "default_preview_border")]
     pub preview_border: String,
+
+    #[serde(default = "default_popup")]
+    pub popup: bool,
+
+    #[serde(default = "default_popup_width")]
+    pub popup_width: u16,
+
+    #[serde(default = "default_popup_height")]
+    pub popup_height: u16,
+
+    #[serde(default = "default_popup_border")]
+    pub popup_border: String,
+
+    #[serde(default = "default_border_color")]
+    pub border_color: String,
+
+    #[serde(default = "default_highlight_color")]
+    pub highlight_color: String,
+
+    #[serde(default = "default_search_prompt")]
+    pub search_prompt: String,
+
+    #[serde(default = "default_search_title")]
+    pub search_title: String,
+
+    #[serde(default = "default_true")]
+    pub show_badges: bool,
+
+    #[serde(default = "default_true")]
+    pub show_icons: bool,
+
+    #[serde(default = "default_true")]
+    pub show_path: bool,
+
+    #[serde(default = "default_true")]
+    pub show_footer: bool,
 }
 
 fn default_preview() -> bool {
@@ -85,12 +121,60 @@ fn default_preview_border() -> String {
     "rounded".to_owned()
 }
 
+fn default_popup() -> bool {
+    true
+}
+
+fn default_popup_width() -> u16 {
+    85
+}
+
+fn default_popup_height() -> u16 {
+    80
+}
+
+fn default_popup_border() -> String {
+    "rounded".to_owned()
+}
+
+fn default_border_color() -> String {
+    "cyan".to_owned()
+}
+
+fn default_highlight_color() -> String {
+    "yellow".to_owned()
+}
+
+fn default_search_prompt() -> String {
+    "> ".to_owned()
+}
+
+fn default_search_title() -> String {
+    " Search / Switch Session (Prefixes: :t tmux, :g git, @ alias) ".to_owned()
+}
+
+fn default_true() -> bool {
+    true
+}
+
 impl Default for TuiConfig {
     fn default() -> Self {
         Self {
             preview: default_preview(),
             preview_width: default_preview_width(),
             preview_border: default_preview_border(),
+            popup: default_popup(),
+            popup_width: default_popup_width(),
+            popup_height: default_popup_height(),
+            popup_border: default_popup_border(),
+            border_color: default_border_color(),
+            highlight_color: default_highlight_color(),
+            search_prompt: default_search_prompt(),
+            search_title: default_search_title(),
+            show_badges: default_true(),
+            show_icons: default_true(),
+            show_path: default_true(),
+            show_footer: default_true(),
         }
     }
 }

@@ -18,15 +18,16 @@ omega/
 │   ├── search/                # Fuzzy filtering & ranking engine (Skim / Nucleo)
 │   ├── tmux/                  # Low-level tmux client, layout parsing, actions & mock harnesses
 │   ├── session/               # Pure domain session discovery, naming, dedup & preview generation
-│   └── daemon/                # Background IPC daemon, candidate caching worker, snapshot store & focus restore
-├── src/                       # Application orchestrator & interactive TUI
+│   ├── daemon/                # Background IPC daemon, candidate caching worker, snapshot store & focus restore
+│   └── ui/                    # Terminal UI shell, popup modal geometry, ANSI text parser & Ratatui rendering engine
+├── src/                       # Central application orchestrator
 │   ├── main.rs                # Process initialization & terminal lifecycle
-│   ├── app.rs                 # Central application state machine & action dispatch
-│   ├── ansi.rs                # Zero-allocation ANSI SGR escape code parser to Ratatui Text
 │   ├── cli.rs                 # Clap CLI parsing & command definitions
 │   ├── commands.rs            # Headless CLI command execution handlers (connect, clone, etc.)
+│   ├── doctor.rs              # System diagnostics & health check
 │   ├── event.rs               # Event polling loop (crossterm keyboard/tick events)
-│   └── ui.rs                  # Two-pane Ratatui rendering engine & responsive layout composition
+│   └── lib.rs                 # Workspace library exports & re-exports
+
 ├── tests/                     # Integration test suites & end-to-end scenarios
 ├── nix/                       # Nix packaging (package.nix) & development shell (devshell.nix)
 ├── Formula/                   # Homebrew tap formula (omega.rb)
@@ -156,7 +157,17 @@ Omega operates as an event-driven terminal application that reads active environ
 - **Primary Responsibility**: Hosts the embedded Lua 5.4 engine (`mlua = "0.12"`), parses declarative `omega.setup` configuration tables into typed Rust configuration models, manages module path resolution (`lua/`), auto-loads plugins (`plugins/`), and dispatches lifecycle events and chainable naming hooks.
 - **Technologies**: `mlua` 0.12 (Lua 5.4, vendored, serde), Serde, `serde_json`.
 
+### 3.8. Terminal UI Subsystem (`crates/ui` / `omega-ui`)
+
+- **Primary Responsibility**: Owns the interactive Ratatui rendering engine, popup modal geometry, ANSI SGR escape code parser, and user-configurable styling parameters.
+- **Key Modules**:
+  - `layout.rs`: Centered popup geometry calculations (`compute_popup_area`), small-terminal fallback boundaries, responsive preview split, and border style resolvers.
+  - `ansi.rs`: Zero-allocation ANSI SGR parser translating escape sequences into styled Ratatui `Text` spans using borrowed string slices.
+  - `app.rs`: Central interactive state machine (`App`) managing search query filtering, session selection indices, preview scrolling, and config application (`apply_tui_config`).
+  - `render.rs`: Frame rendering engine composing the centered popup modal, `Clear` backdrop, search box with configurable prompts, list items with source badges and icons, ANSI preview pane, and footer hints.
+
 ---
+
 
 ## 4. Data Stores & State
 

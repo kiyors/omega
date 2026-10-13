@@ -1,0 +1,16 @@
+[package]
+name = "omega-ui"
+description = "Terminal user interface, popup modal layout, ANSI text parser, and Ratatui widgets for Omega"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+omega-config.workspace = true
+omega-search.workspace = true
+omega-session.workspace = true
+ratatui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -71,6 +71,43 @@ impl LuaEngine {
         })?;
         omega.set("setup", setup_fn)?;
 
+        // omega.ui table with setup, set, get APIs
+        let ui_tbl = lua.create_table()?;
+        let st_ui = Arc::clone(&state);
+        let ui_setup_fn = lua.create_function(move |lua, value: LuaValue| {
+            if let Ok(mut st) = st_ui.lock() {
+                let current_json = serde_json::to_value(&st.config.tui)
+                    .map_err(|e| mlua::Error::runtime(format!("{e}")))?;
+                let incoming_json: serde_json::Value = lua.from_value(value)?;
+                let merged_json = match (current_json, incoming_json) {
+                    (serde_json::Value::Object(mut base), serde_json::Value::Object(patch)) => {
+                        for (k, v) in patch {
+                            base.insert(k, v);
+                        }
+                        serde_json::Value::Object(base)
+                    }
+                    (_, other) => other,
+                };
+                let updated_tui: omega_config::TuiConfig = serde_json::from_value(merged_json)
+                    .map_err(|e| mlua::Error::runtime(format!("{e}")))?;
+                st.config.tui = updated_tui;
+            }
+            Ok(())
+        })?;
+
+        let st_ui_get = Arc::clone(&state);
+        let ui_get_fn = lua.create_function(move |lua, ()| {
+            let current = st_ui_get
+                .lock()
+                .map(|st| st.config.tui.clone())
+                .unwrap_or_default();
+            lua.to_value(&current)
+        })?;
+        ui_tbl.set("setup", ui_setup_fn.clone())?;
+        ui_tbl.set("set", ui_setup_fn)?;
+        ui_tbl.set("get", ui_get_fn)?;
+        omega.set("ui", ui_tbl)?;
+
         // omega.session_name(function) — chainable hooks
         let st_naming = Arc::clone(&state);
         let session_name_fn = lua.create_function(move |lua, func: LuaFunction| {

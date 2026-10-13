@@ -197,3 +197,38 @@ fn test_lua_globals_version_and_log() {
     let ver: String = engine.eval_global("OMEGA_VER").unwrap();
     assert_eq!(ver, env!("CARGO_PKG_VERSION"));
 }
+
+#[test]
+fn test_lua_ui_api_configuration() {
+    let engine = LuaEngine::new().expect("failed to create lua engine");
+    let script = r#"
+        local omega = require("omega")
+        omega.ui.setup({
+            popup = true,
+            popup_width = 80,
+            popup_height = 75,
+            border_color = "magenta",
+            search_prompt = "search: ",
+            show_footer = false,
+        })
+        local current = omega.ui.get()
+        assert(current.popup == true, "popup should be true")
+        assert(current.popup_width == 80, "popup_width should be 80")
+        assert(current.border_color == "magenta", "border_color should be magenta")
+        assert(current.search_prompt == "search: ", "search_prompt should match")
+        assert(current.show_footer == false, "show_footer should be false")
+    "#;
+
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("ui_test.lua");
+    std::fs::write(&file, script).unwrap();
+    engine.load_file(&file).expect("should execute ui script");
+
+    let cfg = engine.config();
+    assert!(cfg.tui.popup);
+    assert_eq!(cfg.tui.popup_width, 80);
+    assert_eq!(cfg.tui.popup_height, 75);
+    assert_eq!(cfg.tui.border_color, "magenta");
+    assert_eq!(cfg.tui.search_prompt, "search: ");
+    assert!(!cfg.tui.show_footer);
+}
