@@ -37,8 +37,21 @@ fn test_cli_parse_clone() {
     );
 }
 
+fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 #[test]
 fn test_clone_command_execution() {
+    if !git_available() {
+        eprintln!("skipping test_clone_command_execution: git not found");
+        return;
+    }
+
     let tmp = tempdir().expect("tempdir failed");
     let base = tmp.path();
 

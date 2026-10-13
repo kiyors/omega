@@ -4,6 +4,7 @@
   stdenv,
   pkg-config,
   libiconv,
+  git,
 }:
 
 rustPlatform.buildRustPackage {
@@ -16,6 +17,7 @@ rustPlatform.buildRustPackage {
   };
 
   nativeBuildInputs = [ pkg-config ];
+  nativeCheckInputs = [ git ];
   buildInputs = lib.optionals stdenv.hostPlatform.isDarwin [
     libiconv
   ];

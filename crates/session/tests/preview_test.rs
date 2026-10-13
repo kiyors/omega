@@ -37,8 +37,21 @@ fn test_plain_directory_preview() {
     assert!(preview.contains("src"));
 }
 
+fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 #[test]
 fn test_git_repository_preview() {
+    if !git_available() {
+        eprintln!("skipping test_git_repository_preview: git not found");
+        return;
+    }
+
     let dir = tempdir().expect("tempdir failed");
     let path = dir.path();
 
