@@ -63,6 +63,62 @@ impl SessionCollector {
         result
     }
 
+    /// Groups and orders candidates according to declarative `sort_order` configuration.
+    ///
+    /// `sort_order` is an array of tiers:
+    /// - A string item (e.g. `"tmux"`) assigns that source to that tier.
+    /// - An array item (e.g. `["config", "git", "zoxide"]`) groups those sources into the same tier,
+    ///   interleaving candidates by descending frecency `score`.
+    /// - Candidates with no explicit tier match are placed at the final tier.
+    /// - Empty `sort_order` preserves the original candidate ordering.
+    pub fn apply_sort_order(
+        &self,
+        mut candidates: Vec<SessionCandidate>,
+        sort_order: &[serde_json::Value],
+    ) -> Vec<SessionCandidate> {
+        if sort_order.is_empty() {
+            return candidates;
+        }
+
+        let find_tier = |cand: &SessionCandidate| -> usize {
+            for (tier_idx, val) in sort_order.iter().enumerate() {
+                match val {
+                    serde_json::Value::String(s) => {
+                        if cand.source.as_str() == s || cand.alias.as_deref() == Some(s) {
+                            return tier_idx;
+                        }
+                    }
+                    serde_json::Value::Array(arr) => {
+                        for item in arr {
+                            if let Some(s) = item.as_str()
+                                && (cand.source.as_str() == s || cand.alias.as_deref() == Some(s))
+                            {
+                                return tier_idx;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            sort_order.len()
+        };
+
+        candidates.sort_by(|a, b| {
+            let tier_a = find_tier(a);
+            let tier_b = find_tier(b);
+
+            if tier_a != tier_b {
+                tier_a.cmp(&tier_b)
+            } else {
+                let score_a = a.score.unwrap_or(0.0);
+                let score_b = b.score.unwrap_or(0.0);
+                score_b.total_cmp(&score_a)
+            }
+        });
+
+        candidates
+    }
+
     /// Discovers candidates across tmux, config, git, and zoxide, then deduplicates them.
     pub fn collect_from_system(&self, config: &omega_config::Config) -> Vec<SessionCandidate> {
         let mut all = Vec::new();
@@ -111,6 +167,9 @@ impl SessionCollector {
         }
 
         let mut results = self.dedup_candidates(all, config.hide_attached);
+        if !config.sort_order.is_empty() {
+            results = self.apply_sort_order(results, &config.sort_order);
+        }
         let home = std::env::var("HOME").ok();
         for cand in &mut results {
             if cand.icon.is_none() {

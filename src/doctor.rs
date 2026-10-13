@@ -26,6 +26,9 @@ pub struct DoctorReport {
 pub trait DoctorEnv {
     fn command_output(&self, cmd: &str, args: &[&str]) -> Option<String>;
     fn check_socket(&self, socket_path: &Path) -> bool;
+    fn get_env_var(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -197,6 +200,51 @@ pub fn run_doctor<E: DoctorEnv>(env: &E, config_dir: Option<&Path>) -> DoctorRep
                 name: "config".to_owned(),
                 status: DoctorStatus::Ok,
                 message: "No config directory found, using defaults".to_owned(),
+            });
+        }
+    }
+
+    // 6. Terminal capabilities check
+    let colorterm = env.get_env_var("COLORTERM");
+    let term = env.get_env_var("TERM");
+
+    match (colorterm.as_deref(), term.as_deref()) {
+        (Some("truecolor"), _) | (Some("24bit"), _) => {
+            let term_str = term.unwrap_or_else(|| "unknown".to_owned());
+            items.push(DoctorItem {
+                name: "terminal".to_owned(),
+                status: DoctorStatus::Ok,
+                message: format!(
+                    "TrueColor 24-bit supported ($COLORTERM=truecolor, $TERM={term_str})"
+                ),
+            });
+        }
+        (_, Some(t))
+            if t.contains("256color")
+                || t.contains("kitty")
+                || t.contains("alacritty")
+                || t.contains("ghostty") =>
+        {
+            items.push(DoctorItem {
+                name: "terminal".to_owned(),
+                status: DoctorStatus::Ok,
+                message: format!("256-color supported ($TERM={t})"),
+            });
+        }
+        (_, Some(t)) if !t.is_empty() && t != "dumb" => {
+            items.push(DoctorItem {
+                name: "terminal".to_owned(),
+                status: DoctorStatus::Warning,
+                message: format!(
+                    "Standard color support ($TERM={t}); 256-color or truecolor recommended"
+                ),
+            });
+        }
+        _ => {
+            items.push(DoctorItem {
+                name: "terminal".to_owned(),
+                status: DoctorStatus::Warning,
+                message: "Dumb or missing $TERM (interactive TUI rendering degraded)".to_owned(),
             });
         }
     }

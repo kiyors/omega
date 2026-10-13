@@ -6,8 +6,6 @@ edition.workspace = true
 [dependencies]
 omega-config.workspace = true
 mlua.workspace         = true
-serde.workspace        = true
-serde_json.workspace   = true
 
 [dev-dependencies]
 tempfile.workspace = true

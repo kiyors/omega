@@ -6,6 +6,20 @@ use tempfile::tempdir;
 struct MockDoctorEnv {
     commands: HashMap<String, Option<String>>,
     socket_running: bool,
+    env_vars: HashMap<String, String>,
+}
+
+impl Default for MockDoctorEnv {
+    fn default() -> Self {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("COLORTERM".to_owned(), "truecolor".to_owned());
+        env_vars.insert("TERM".to_owned(), "xterm-256color".to_owned());
+        Self {
+            commands: HashMap::new(),
+            socket_running: false,
+            env_vars,
+        }
+    }
 }
 
 impl DoctorEnv for MockDoctorEnv {
@@ -15,6 +29,10 @@ impl DoctorEnv for MockDoctorEnv {
 
     fn check_socket(&self, _socket_path: &Path) -> bool {
         self.socket_running
+    }
+
+    fn get_env_var(&self, key: &str) -> Option<String> {
+        self.env_vars.get(key).cloned()
     }
 }
 
@@ -28,6 +46,7 @@ fn test_doctor_reports_all_healthy_when_tools_and_valid_config_present() {
     let env = MockDoctorEnv {
         commands,
         socket_running: true,
+        ..MockDoctorEnv::default()
     };
 
     let dir = tempdir().unwrap();
@@ -73,6 +92,12 @@ fn test_doctor_reports_all_healthy_when_tools_and_valid_config_present() {
             .iter()
             .any(|i| i.name == "config" && matches!(i.status, DoctorStatus::Ok))
     );
+    assert!(
+        report
+            .items
+            .iter()
+            .any(|i| i.name == "terminal" && matches!(i.status, DoctorStatus::Ok))
+    );
 }
 
 #[test]
@@ -85,6 +110,7 @@ fn test_doctor_flags_missing_tmux_and_syntax_error_in_config() {
     let env = MockDoctorEnv {
         commands,
         socket_running: false, // Daemon stopped (warning)
+        ..MockDoctorEnv::default()
     };
 
     let dir = tempdir().unwrap();
@@ -113,6 +139,7 @@ fn test_doctor_validates_config_json_when_lua_absent() {
     let env = MockDoctorEnv {
         commands,
         socket_running: true,
+        ..MockDoctorEnv::default()
     };
 
     let dir = tempdir().unwrap();
@@ -129,4 +156,25 @@ fn test_doctor_validates_config_json_when_lua_absent() {
     let config_item = report.items.iter().find(|i| i.name == "config").unwrap();
     assert!(matches!(config_item.status, DoctorStatus::Ok));
     assert!(config_item.message.contains("Valid config.json"));
+}
+
+#[test]
+fn test_doctor_flags_dumb_terminal_as_warning() {
+    let mut commands = HashMap::new();
+    commands.insert("tmux".to_owned(), Some("tmux 3.4".to_owned()));
+    commands.insert("git".to_owned(), Some("git version 2.44.0".to_owned()));
+
+    let mut env_vars = HashMap::new();
+    env_vars.insert("TERM".to_owned(), "dumb".to_owned());
+
+    let env = MockDoctorEnv {
+        commands,
+        socket_running: true,
+        env_vars,
+    };
+
+    let report = run_doctor(&env, None);
+    let term_item = report.items.iter().find(|i| i.name == "terminal").unwrap();
+    assert!(matches!(term_item.status, DoctorStatus::Warning));
+    assert!(term_item.message.contains("Dumb or missing $TERM"));
 }

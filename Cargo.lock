@@ -1080,8 +1080,6 @@ version = "0.1.0"
 dependencies = [
  "mlua",
  "omega-config",
- "serde",
- "serde_json",
  "tempfile",
 ]
 
@@ -1100,6 +1098,7 @@ dependencies = [
  "omega-tmux",
  "regex",
  "serde",
+ "serde_json",
  "tempfile",
  "walkdir",
 ]
@@ -1109,7 +1108,6 @@ name = "omega-tmux"
 version = "0.1.0"
 dependencies = [
  "serde",
- "tempfile",
 ]
 
 [[package]]

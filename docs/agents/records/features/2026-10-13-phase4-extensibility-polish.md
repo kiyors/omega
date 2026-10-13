@@ -118,3 +118,14 @@ Following a comprehensive subagent audit spanning standards, spec compliance, pe
    - Enhanced target path detection in `omega connect <target>` so leading `/`, `~`, or `.` paths are recognized as filesystem targets even before the directory is created.
    - Added `config.json` fallback verification to `omega doctor`.
 
+5. **Declarative Sort Order & Score Interleaving (`SessionCollector::apply_sort_order`)**:
+   - Implemented candidate grouping and prioritization based on declarative `config.sort_order`.
+   - Supports discrete source tiers (e.g. `"tmux"`, `"alias"`), custom source names (e.g. `"docker"`), and interleaved array groups (e.g. `["config", "git", "zoxide"]`) ranked by descending frecency score.
+   - Retains stable sorting order for equal or missing scores, with unlisted sources deferred to the final tier.
+   - Thoroughly tested in `crates/session/tests/sort_order_test.rs`.
+
+6. **Terminal Capabilities Diagnostic (`omega doctor`)**:
+   - Added environment inspection for `$COLORTERM` and `$TERM` detecting TrueColor (24-bit RGB) and 256-color capabilities.
+   - Flags degraded or missing `$TERM` (e.g. `dumb`) with descriptive warning messages and advice.
+   - Fully covered by unit tests in `tests/doctor_test.rs`.
+
