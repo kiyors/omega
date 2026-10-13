@@ -42,6 +42,22 @@ A retention mechanism that maintains a rolling history of the most recent auto-s
 
 The operation of restoring one specific named session from a saved snapshot without modifying or recreating other active or missing sessions.
 
+### Cache Daemon
+
+An optional lightweight background process that listens on a Unix domain socket (`$XDG_RUNTIME_DIR/omega.sock`), maintains an in-memory candidate cache refreshed by background filesystem and tmux polling, and manages the periodic auto-save lifecycle. When stopped, Omega falls back to direct synchronous scans transparently.
+
+### Hot Candidate Cache
+
+The daemon-maintained in-memory set of session candidates, refreshed on a fixed background interval, enabling sub-millisecond query responses over the Unix socket for CLI and TUI consumers.
+
+### Auto-Save
+
+A snapshot captured without an explicit tag, written to the rolling retention window (`snapshot-YYYY-MM-DD-HHMMSS.json`) by the daemon's periodic timer (default: 15 minutes) and on graceful daemon termination.
+
+### Direct-Scan Fallback
+
+The transparent degradation path in which candidate discovery runs synchronously against tmux, git, configured roots, and zoxide when the cache daemon is not reachable, guaranteeing identical results without the socket round-trip.
+
 ### Naming Pipeline
 
 The staged transformation sequence (`alias` → `Lua hook` → `regex substitutions` → `worktree/directory defaults` → `character sanitization`) that resolves an arbitrary workspace path or target into a valid, deterministic tmux session name.
