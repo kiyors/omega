@@ -150,6 +150,32 @@ fn test_store_rotation_keeps_last_ten_and_exempts_named() {
 }
 
 #[test]
+fn test_store_list_snapshots_reports_kinds() {
+    let tmp = tempdir().expect("tempdir");
+    let store = SnapshotStore::new(tmp.path().to_path_buf());
+
+    store
+        .save_snapshot(&sample_snapshot("auto"), None)
+        .expect("save auto");
+    store
+        .save_snapshot(&sample_snapshot("named"), Some("tagged"))
+        .expect("save named");
+
+    let summaries = store.list_snapshots().expect("list");
+    assert_eq!(summaries.len(), 2);
+    let auto = summaries
+        .iter()
+        .find(|s| s.is_auto)
+        .expect("auto summary present");
+    let named = summaries
+        .iter()
+        .find(|s| !s.is_auto)
+        .expect("named summary present");
+    assert!(auto.name.starts_with(AUTO_SAVE_PREFIX));
+    assert_eq!(named.name, "tagged.json");
+}
+
+#[test]
 fn test_load_missing_snapshot_reports_not_found() {
     let tmp = tempdir().expect("tempdir");
     let store = SnapshotStore::new(tmp.path().to_path_buf());

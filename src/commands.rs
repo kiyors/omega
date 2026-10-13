@@ -44,13 +44,12 @@ pub fn execute_command_with_engine<T: TmuxClient>(
                 && let Ok(custom) = eng.eval_custom_sources()
             {
                 for item in custom {
-                    let mut cand = omega_session::SessionCandidate::new(
+                    candidates.push(omega_session::SessionCandidate::from_custom(
                         item.name,
                         item.path,
-                        SessionSource::Config,
-                    );
-                    cand.icon = item.icon;
-                    candidates.push(cand);
+                        item.source_name,
+                        item.icon,
+                    ));
                 }
             }
 
@@ -119,14 +118,18 @@ pub fn execute_command_with_engine<T: TmuxClient>(
                 && let Ok(custom) = eng.eval_custom_sources()
             {
                 for item in custom {
-                    let mut cand = omega_session::SessionCandidate::new(
+                    candidates.push(omega_session::SessionCandidate::from_custom(
                         item.name,
                         item.path,
-                        SessionSource::Config,
-                    );
-                    cand.icon = item.icon;
-                    candidates.push(cand);
+                        item.source_name,
+                        item.icon,
+                    ));
                 }
+            }
+
+            if !config.sort_order.is_empty() {
+                let collector = omega_session::SessionCollector::new();
+                candidates = collector.apply_sort_order(candidates, &config.sort_order);
             }
 
             if only_tmux || only_git || only_zoxide {
@@ -337,16 +340,21 @@ pub fn smart_connect<T: TmuxClient>(
     engine: Option<&omega_lua::LuaEngine>,
 ) -> Result<()> {
     if !tmux.has_session(session_name) {
+        let home_var = std::env::var("HOME").ok();
+        let session_path_str = session_path.to_string_lossy();
         let matched_alias = config.aliases.iter().find(|a| {
             if a.name == session_name {
                 return true;
             }
             if let Some(rest) = a.path.strip_prefix("~/")
-                && let Ok(home) = std::env::var("HOME")
+                && let Some(home) = home_var.as_deref()
             {
-                return format!("{home}/{rest}") == session_path.to_string_lossy();
+                if let Some(suffix) = session_path_str.strip_prefix(home) {
+                    return suffix.strip_prefix('/').unwrap_or(suffix) == rest;
+                }
+                return false;
             }
-            a.path == session_path.to_string_lossy()
+            a.path == session_path_str
         });
 
         let windows_to_provision = if let Some(alias) = matched_alias

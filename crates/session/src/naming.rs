@@ -65,8 +65,7 @@ impl NamingPipeline {
             }
         };
 
-        let final_raw = apply_compiled_substitutions(base_raw, &compiled);
-        let sanitized = self.sanitize(&final_raw);
+        let sanitized = self.sanitize(&base_raw);
 
         // Check collision
         let mut candidate_name = sanitized.clone();

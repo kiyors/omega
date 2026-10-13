@@ -97,3 +97,20 @@ fn test_naming_with_custom_hook_and_substitutions() {
     );
     assert_eq!(regex_name, "workspaces-omega");
 }
+
+#[test]
+fn test_name_substitutions_not_executed_twice() {
+    let namer = NamingPipeline;
+    let path = Path::new("/Users/gaurav/code/cat");
+
+    let substitutions = vec![omega_config::NameSubstitution {
+        find: "a".to_owned(),
+        replace: "aa".to_owned(),
+    }];
+
+    let name = namer.resolve_full(path, 1, &[], None, &substitutions);
+    assert_eq!(
+        name, "caat",
+        "Substitution must be applied exactly once, not twice"
+    );
+}

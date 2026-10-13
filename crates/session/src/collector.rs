@@ -66,57 +66,53 @@ impl SessionCollector {
     /// Groups and orders candidates according to declarative `sort_order` configuration.
     ///
     /// `sort_order` is an array of tiers:
-    /// - A string item (e.g. `"tmux"`) assigns that source to that tier.
-    /// - An array item (e.g. `["config", "git", "zoxide"]`) groups those sources into the same tier,
+    /// - A single source (e.g. `SortTier::Single("tmux")`) assigns that source to that tier.
+    /// - A grouped source (e.g. `SortTier::Group(vec!["config", "git", "zoxide"])`) groups those sources into the same tier,
     ///   interleaving candidates by descending frecency `score`.
     /// - Candidates with no explicit tier match are placed at the final tier.
     /// - Empty `sort_order` preserves the original candidate ordering.
     pub fn apply_sort_order(
         &self,
-        mut candidates: Vec<SessionCandidate>,
-        sort_order: &[serde_json::Value],
+        candidates: Vec<SessionCandidate>,
+        sort_order: &[omega_config::SortTier],
     ) -> Vec<SessionCandidate> {
         if sort_order.is_empty() {
             return candidates;
         }
 
         let find_tier = |cand: &SessionCandidate| -> usize {
-            for (tier_idx, val) in sort_order.iter().enumerate() {
-                match val {
-                    serde_json::Value::String(s) => {
-                        if cand.source.as_str() == s || cand.alias.as_deref() == Some(s) {
-                            return tier_idx;
-                        }
-                    }
-                    serde_json::Value::Array(arr) => {
-                        for item in arr {
-                            if let Some(s) = item.as_str()
-                                && (cand.source.as_str() == s || cand.alias.as_deref() == Some(s))
-                            {
-                                return tier_idx;
-                            }
-                        }
-                    }
-                    _ => {}
+            for (tier_idx, tier) in sort_order.iter().enumerate() {
+                if tier.matches(
+                    cand.source.as_str(),
+                    cand.alias.as_deref(),
+                    cand.custom_source.as_deref(),
+                ) {
+                    return tier_idx;
                 }
             }
             sort_order.len()
         };
 
-        candidates.sort_by(|a, b| {
-            let tier_a = find_tier(a);
-            let tier_b = find_tier(b);
+        // Precompute tiers once to avoid O(N log N) redundant traversals during sorting
+        let mut tagged: Vec<(usize, SessionCandidate)> = candidates
+            .into_iter()
+            .map(|cand| {
+                let tier = find_tier(&cand);
+                (tier, cand)
+            })
+            .collect();
 
+        tagged.sort_by(|(tier_a, cand_a), (tier_b, cand_b)| {
             if tier_a != tier_b {
-                tier_a.cmp(&tier_b)
+                tier_a.cmp(tier_b)
             } else {
-                let score_a = a.score.unwrap_or(0.0);
-                let score_b = b.score.unwrap_or(0.0);
+                let score_a = cand_a.score.unwrap_or(0.0);
+                let score_b = cand_b.score.unwrap_or(0.0);
                 score_b.total_cmp(&score_a)
             }
         });
 
-        candidates
+        tagged.into_iter().map(|(_, cand)| cand).collect()
     }
 
     /// Discovers candidates across tmux, config, git, and zoxide, then deduplicates them.

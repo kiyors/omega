@@ -95,6 +95,26 @@ impl Default for TuiConfig {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SortTier {
+    Single(String),
+    Group(Vec<String>),
+}
+
+impl SortTier {
+    pub fn matches(&self, source: &str, alias: Option<&str>, custom_source: Option<&str>) -> bool {
+        match self {
+            Self::Single(s) => {
+                source == s || alias == Some(s.as_str()) || custom_source == Some(s.as_str())
+            }
+            Self::Group(group) => group.iter().any(|s| {
+                source == s || alias == Some(s.as_str()) || custom_source == Some(s.as_str())
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_hide_attached")]
@@ -122,7 +142,7 @@ pub struct Config {
     pub keymaps: HashMap<String, String>,
 
     #[serde(default)]
-    pub sort_order: Vec<serde_json::Value>,
+    pub sort_order: Vec<SortTier>,
 
     #[serde(default)]
     pub tui: TuiConfig,

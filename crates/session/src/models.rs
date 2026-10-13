@@ -9,6 +9,7 @@ pub enum SessionSource {
     Config = 2,
     Git = 3,
     Zoxide = 4,
+    Custom = 5,
 }
 
 impl SessionSource {
@@ -19,6 +20,7 @@ impl SessionSource {
             Self::Config => "config",
             Self::Git => "git",
             Self::Zoxide => "zoxide",
+            Self::Custom => "custom",
         }
     }
 
@@ -29,6 +31,7 @@ impl SessionSource {
             Self::Config => 2,
             Self::Git => 3,
             Self::Zoxide => 4,
+            Self::Custom => 5,
         }
     }
 
@@ -39,6 +42,7 @@ impl SessionSource {
             Self::Config => "",
             Self::Git => ":g ",
             Self::Zoxide => "",
+            Self::Custom => "",
         }
     }
 
@@ -70,6 +74,7 @@ pub struct SessionCandidate {
     pub source: SessionSource,
     pub score: Option<f64>,
     pub alias: Option<String>,
+    pub custom_source: Option<String>,
     pub icon: Option<String>,
     pub attached: bool,
     pub windows: Option<usize>,
@@ -83,16 +88,39 @@ impl SessionCandidate {
             source,
             score: None,
             alias: None,
+            custom_source: None,
             icon: None,
             attached: false,
             windows: None,
         }
     }
 
-    /// Inherits missing metadata (alias, icon, score) from another candidate.
+    pub fn from_custom(
+        name: impl Into<String>,
+        path: impl Into<PathBuf>,
+        source_name: impl Into<String>,
+        icon: Option<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            path: path.into(),
+            source: SessionSource::Custom,
+            score: None,
+            alias: None,
+            custom_source: Some(source_name.into()),
+            icon,
+            attached: false,
+            windows: None,
+        }
+    }
+
+    /// Inherits missing metadata (alias, custom_source, icon, score) from another candidate.
     pub fn inherit_metadata(&mut self, other: &Self) {
         if self.alias.is_none() {
             self.alias = other.alias.clone();
+        }
+        if self.custom_source.is_none() {
+            self.custom_source = other.custom_source.clone();
         }
         if self.icon.is_none() {
             self.icon = other.icon.clone();

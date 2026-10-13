@@ -29,7 +29,10 @@ impl PreviewGenerator {
                 }
             }
             SessionSource::Git => self.generate_git_preview(&candidate.path),
-            SessionSource::Alias | SessionSource::Config | SessionSource::Zoxide => {
+            SessionSource::Alias
+            | SessionSource::Config
+            | SessionSource::Zoxide
+            | SessionSource::Custom => {
                 if candidate.path.join(".git").exists() {
                     self.generate_git_preview(&candidate.path)
                 } else if candidate.path.is_dir() {

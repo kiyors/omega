@@ -1,5 +1,5 @@
+use omega_config::SortTier;
 use omega_session::{SessionCandidate, SessionCollector, SessionSource};
-use serde_json::json;
 use std::path::PathBuf;
 
 #[test]
@@ -21,7 +21,11 @@ fn test_sort_order_tier_prioritization() {
         SessionCandidate::new("git-proj", PathBuf::from("/p/git"), SessionSource::Git),
     ];
 
-    let sort_order = vec![json!("alias"), json!("tmux"), json!("git")];
+    let sort_order = vec![
+        SortTier::Single("alias".to_string()),
+        SortTier::Single("tmux".to_string()),
+        SortTier::Single("git".to_string()),
+    ];
 
     let sorted = collector.apply_sort_order(candidates, &sort_order);
 
@@ -68,7 +72,10 @@ fn test_sort_order_interleaving_with_frecency_scores() {
     ];
 
     // Tier 0: "tmux", Tier 1: ["git", "zoxide"] interleaved by score descending
-    let sort_order = vec![json!("tmux"), json!(["git", "zoxide"])];
+    let sort_order = vec![
+        SortTier::Single("tmux".to_string()),
+        SortTier::Group(vec!["git".to_string(), "zoxide".to_string()]),
+    ];
 
     let sorted = collector.apply_sort_order(candidates, &sort_order);
 
@@ -84,22 +91,44 @@ fn test_sort_order_custom_source_alias_name() {
     let collector = SessionCollector::new();
 
     let cand_tmux = SessionCandidate::new("tmux-s", PathBuf::from("/p/tmux"), SessionSource::Tmux);
-
-    let mut cand_docker = SessionCandidate::new(
-        "docker:redis",
-        PathBuf::from("/p/docker"),
-        SessionSource::Alias,
-    );
-    cand_docker.alias = Some("docker".to_owned());
+    let cand_docker =
+        SessionCandidate::from_custom("docker:redis", PathBuf::from("/p/docker"), "docker", None);
 
     let candidates = vec![cand_tmux, cand_docker];
 
-    let sort_order = vec![json!("docker"), json!("tmux")];
+    let sort_order = vec![
+        SortTier::Single("docker".to_string()),
+        SortTier::Single("tmux".to_string()),
+    ];
 
     let sorted = collector.apply_sort_order(candidates, &sort_order);
 
     assert_eq!(sorted[0].name, "docker:redis");
     assert_eq!(sorted[1].name, "tmux-s");
+}
+
+#[test]
+fn test_sort_order_with_custom_source_does_not_collide_with_alias() {
+    let collector = SessionCollector::new();
+
+    let cand_tmux = SessionCandidate::new("tmux-s", PathBuf::from("/p/tmux"), SessionSource::Tmux);
+    let cand_alias =
+        SessionCandidate::new("alias-s", PathBuf::from("/p/alias"), SessionSource::Alias);
+    let cand_docker =
+        SessionCandidate::from_custom("docker:redis", PathBuf::from("/p/docker"), "docker", None);
+
+    // sort_order prioritizes alias, then docker, then tmux
+    let sort_order = vec![
+        SortTier::Single("alias".to_string()),
+        SortTier::Single("docker".to_string()),
+        SortTier::Single("tmux".to_string()),
+    ];
+
+    let sorted = collector.apply_sort_order(vec![cand_tmux, cand_docker, cand_alias], &sort_order);
+
+    assert_eq!(sorted[0].name, "alias-s");
+    assert_eq!(sorted[1].name, "docker:redis");
+    assert_eq!(sorted[2].name, "tmux-s");
 }
 
 #[test]

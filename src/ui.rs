@@ -97,6 +97,10 @@ pub fn render(frame: &mut Frame, app: &App) {
                     SessionSource::Zoxide => {
                         Span::styled(" [zoxide]", Style::default().fg(Color::Yellow))
                     }
+                    SessionSource::Custom => {
+                        let label = item.custom_source.as_deref().unwrap_or("custom");
+                        Span::styled(format!(" [{label}] "), Style::default().fg(Color::Cyan))
+                    }
                 };
 
                 let icon_span = if let Some(icon) = &item.icon {

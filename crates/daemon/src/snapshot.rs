@@ -70,6 +70,13 @@ pub const LATEST_POINTER: &str = "latest.json";
 /// Prefix shared by all auto-save snapshot files.
 pub const AUTO_SAVE_PREFIX: &str = "snapshot-";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotSummary {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_auto: bool,
+}
+
 pub struct SnapshotStore {
     base_dir: PathBuf,
 }
@@ -175,6 +182,34 @@ impl SnapshotStore {
         }
 
         Ok(())
+    }
+
+    /// Lists all retained snapshots, sorted by file name.
+    pub fn list_snapshots(&self) -> io::Result<Vec<SnapshotSummary>> {
+        if !self.base_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut list = Vec::new();
+        for entry in fs::read_dir(&self.base_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json") {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name == LATEST_POINTER {
+                    continue;
+                }
+                let is_auto = name.starts_with(AUTO_SAVE_PREFIX);
+                list.push(SnapshotSummary {
+                    name,
+                    path,
+                    is_auto,
+                });
+            }
+        }
+
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(list)
     }
 
     /// Atomically points `latest.json` at the newest auto-save.

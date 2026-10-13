@@ -12,9 +12,19 @@ use std::path::Path;
 pub fn load_config_and_engine() -> (Config, Option<LuaEngine>) {
     if let Some(dir) = Config::config_dir() {
         let has_lua = dir.join("init.lua").exists() || dir.join("plugins").is_dir();
-        if has_lua && let Ok(engine) = LuaEngine::from_config_dir(&dir) {
-            let cfg = engine.config();
-            return (cfg, Some(engine));
+        if has_lua {
+            match LuaEngine::from_config_dir(&dir) {
+                Ok(engine) => {
+                    let cfg = engine.config();
+                    return (cfg, Some(engine));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[omega:warn] Failed to load Lua config from {}: {e}",
+                        dir.display()
+                    );
+                }
+            }
         }
 
         let config_json = dir.join("config.json");

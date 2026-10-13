@@ -7,7 +7,7 @@ use omega::commands::{execute_command_with_engine, smart_connect};
 use omega::event::{Event, EventHandler};
 use omega::ui;
 use omega_daemon::fetch_candidates_or_fallback;
-use omega_session::{PreviewGenerator, SessionCandidate, SessionSource};
+use omega_session::{PreviewGenerator, SessionCandidate, SessionCollector, SessionSource};
 use omega_tmux::{RealTmuxClient, TmuxClient};
 use std::time::Duration;
 
@@ -26,21 +26,37 @@ fn main() -> Result<()> {
     // Launch interactive TUI picker
     let mut sessions = fetch_candidates_or_fallback(None, &config);
 
-    if let Some(engine) = &lua_engine
-        && let Ok(custom_sources) = engine.eval_custom_sources()
-    {
-        for custom in custom_sources {
-            sessions.push(SessionCandidate {
-                name: custom.name,
-                path: custom.path,
-                source: SessionSource::Alias,
-                score: None,
-                alias: Some(custom.source_name),
-                icon: custom.icon,
-                attached: false,
-                windows: None,
-            });
+    if let Some(engine) = &lua_engine {
+        if let Ok(custom_sources) = engine.eval_custom_sources() {
+            for custom in custom_sources {
+                sessions.push(SessionCandidate::from_custom(
+                    custom.name,
+                    custom.path,
+                    custom.source_name,
+                    custom.icon,
+                ));
+            }
         }
+
+        // Apply custom naming hook (omega.session_name) to non-tmux candidates if configured
+        for cand in &mut sessions {
+            if cand.source != SessionSource::Tmux
+                && cand.source != SessionSource::Alias
+                && cand.source != SessionSource::Custom
+            {
+                let git_ctx = omega_session::find_git_context(&cand.path);
+                if let Some(custom_name) =
+                    engine.call_session_name_hook(&cand.path, git_ctx.as_ref())
+                {
+                    cand.name = custom_name;
+                }
+            }
+        }
+    }
+
+    if !config.sort_order.is_empty() {
+        let collector = SessionCollector::new();
+        sessions = collector.apply_sort_order(sessions, &config.sort_order);
     }
 
     let initial_query = if cli.query.is_empty() {
@@ -127,18 +143,22 @@ fn main() -> Result<()> {
                     }
                     _ => None,
                 };
+                let kill_selected = |app: &mut App, tmux: &mut RealTmuxClient| {
+                    if let Some(selected) = app.selected_item() {
+                        if selected.source == SessionSource::Tmux {
+                            let _ = tmux.kill_session(&selected.name);
+                        }
+                        app.remove_selected();
+                    }
+                };
+
                 if let Some(k) = key_str
                     && let Some(action) = config.keymaps.get(&k)
                 {
                     match action.as_str() {
                         "connect" => break app.selected_item().cloned(),
                         "kill_session" => {
-                            if let Some(selected) = app.selected_item() {
-                                if selected.source == SessionSource::Tmux {
-                                    let _ = tmux_client.kill_session(&selected.name);
-                                }
-                                app.remove_selected();
-                            }
+                            kill_selected(&mut app, &mut tmux_client);
                             continue;
                         }
                         "select_next" => {
@@ -189,12 +209,7 @@ fn main() -> Result<()> {
                         app.scroll_preview_down();
                     }
                     KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        if let Some(selected) = app.selected_item() {
-                            if selected.source == SessionSource::Tmux {
-                                let _ = tmux_client.kill_session(&selected.name);
-                            }
-                            app.remove_selected();
-                        }
+                        kill_selected(&mut app, &mut tmux_client);
                     }
                     KeyCode::Backspace => {
                         app.query.pop();
