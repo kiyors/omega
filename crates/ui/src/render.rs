@@ -18,51 +18,67 @@ pub fn resolve_color(color_name: &str) -> Color {
     parse_color(color_name)
 }
 
+#[inline]
+fn count_digits(mut n: usize) -> usize {
+    if n == 0 {
+        return 1;
+    }
+    let mut digits = 0;
+    while n > 0 {
+        digits += 1;
+        n /= 10;
+    }
+    digits
+}
+
 #[must_use]
 pub fn format_windows_peek(names: &[String], max_width: usize) -> Option<String> {
     if names.is_empty() || max_width < 4 {
         return None;
     }
 
-    let prefix = "  ";
-    let mut shown = Vec::new();
-    let mut used_len = prefix.len();
+    const PREFIX: &str = "  ";
+    let mut shown_count = 0;
+    let mut used_len = PREFIX.len();
 
     for (i, name) in names.iter().enumerate() {
-        let entry_len = if shown.is_empty() {
+        let entry_len = if shown_count == 0 {
             name.len()
         } else {
             1 + name.len()
         };
         let remaining = names.len() - i - 1;
         let elision_len = if remaining > 0 {
-            3 + remaining.to_string().len() + 1
+            4 + count_digits(remaining)
         } else {
             0
         };
 
         if used_len + entry_len + elision_len <= max_width {
-            shown.push(name.as_str());
+            shown_count += 1;
             used_len += entry_len;
         } else {
             break;
         }
     }
 
-    if shown.is_empty() {
+    if shown_count == 0 {
         return None;
     }
 
-    let mut result = String::with_capacity(max_width);
-    result.push_str(prefix);
-    result.push_str(&shown.join(" "));
-
-    if shown.len() < names.len() {
-        let remaining = names.len() - shown.len();
-        let elision = format!(" (+{})", remaining);
-        if result.len() + elision.len() <= max_width {
-            result.push_str(&elision);
+    let mut result = String::with_capacity(used_len + 8);
+    result.push_str(PREFIX);
+    for (i, name) in names.iter().take(shown_count).enumerate() {
+        if i > 0 {
+            result.push(' ');
         }
+        result.push_str(name);
+    }
+
+    if shown_count < names.len() {
+        use std::fmt::Write;
+        let remaining = names.len() - shown_count;
+        let _ = write!(result, " (+{remaining})");
     }
 
     Some(result)
@@ -184,7 +200,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                         Span::styled(" [tmux]  ", Style::default().fg(theme.badge_tmux))
                     }
                     SessionSource::Window => {
-                        Span::styled(" [win]   ", Style::default().fg(theme.badge_tmux))
+                        Span::styled(" [win]   ", Style::default().fg(theme.badge_window))
                     }
                     SessionSource::Git => {
                         Span::styled(" [git]   ", Style::default().fg(theme.badge_git))

@@ -102,9 +102,10 @@ pub fn parse_tmux_windows(raw: &str) -> Vec<TmuxWindowInfo> {
 }
 
 /// Parses `tmux list-windows -a` format:
-/// `#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}`
+/// `#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}` (and optional `\t#{window_id}`)
 pub fn parse_tmux_window_candidates(raw: &str) -> Vec<SessionCandidate> {
-    let mut candidates = Vec::new();
+    let line_estimate = raw.as_bytes().iter().filter(|&&b| b == b'\n').count();
+    let mut candidates = Vec::with_capacity(line_estimate + 1);
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -112,17 +113,27 @@ pub fn parse_tmux_window_candidates(raw: &str) -> Vec<SessionCandidate> {
             continue;
         }
 
-        let mut parts = trimmed.split('\t');
+        let mut parts = trimmed.splitn(5, '\t');
         let (Some(session_name), Some(window_name), Some(path_str), Some(active_str)) =
             (parts.next(), parts.next(), parts.next(), parts.next())
         else {
             continue;
         };
 
-        let target_name = format!("{session_name}:{window_name}");
+        let mut target_name = String::with_capacity(session_name.len() + 1 + window_name.len());
+        target_name.push_str(session_name);
+        target_name.push(':');
+        target_name.push_str(window_name);
+
         let path = PathBuf::from(path_str);
         let mut candidate = SessionCandidate::new(target_name, path, SessionSource::Window);
         candidate.attached = active_str == "1";
+        if let Some(window_id) = parts.next() {
+            let id = window_id.trim();
+            if !id.is_empty() {
+                candidate.alias = Some(id.to_owned());
+            }
+        }
         candidates.push(candidate);
     }
 

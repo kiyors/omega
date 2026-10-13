@@ -25,6 +25,8 @@ pub fn harvest_and_sort_candidates(
 ) -> Vec<SessionCandidate> {
     let mut candidates = fetch_candidates_or_fallback(None, config);
 
+    let mut has_mutations = false;
+
     if let Some(eng) = engine {
         if let Ok(custom) = eng.eval_custom_sources() {
             for item in custom {
@@ -34,6 +36,7 @@ pub fn harvest_and_sort_candidates(
                     item.source_name,
                     item.icon,
                 ));
+                has_mutations = true;
             }
         }
 
@@ -47,16 +50,19 @@ pub fn harvest_and_sort_candidates(
                 if let Some(custom_name) = eng.call_session_name_hook(&cand.path, git_ctx.as_ref())
                 {
                     cand.name = NamingPipeline::new().sanitize(&custom_name);
+                    has_mutations = true;
                 }
             }
         }
     }
 
-    let collector = SessionCollector::new();
-    let mut candidates = collector.dedup_candidates(candidates, config.hide_attached);
+    if has_mutations {
+        let collector = SessionCollector::new();
+        candidates = collector.dedup_candidates(candidates, config.hide_attached);
 
-    if !config.sort_order.is_empty() {
-        candidates = collector.apply_sort_order(candidates, &config.sort_order);
+        if !config.sort_order.is_empty() {
+            candidates = collector.apply_sort_order(candidates, &config.sort_order);
+        }
     }
 
     candidates

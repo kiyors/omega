@@ -98,38 +98,41 @@ impl SessionCollector {
         };
 
         // Precompute tiers once to avoid O(N log N) redundant traversals during sorting
-        let mut tagged: Vec<(usize, usize, SessionCandidate)> = candidates
-            .into_iter()
-            .enumerate()
-            .map(|(idx, cand)| {
-                let tier = find_tier(&cand);
-                (idx, tier, cand)
-            })
-            .collect();
+        let tiers: Vec<usize> = candidates.iter().map(find_tier).collect();
+        let mut indices: Vec<usize> = (0..candidates.len()).collect();
 
-        tagged.sort_by(|(idx_a, tier_a, cand_a), (idx_b, tier_b, cand_b)| {
-            if tier_a != tier_b {
-                tier_a.cmp(tier_b)
+        indices.sort_by(|&a, &b| {
+            if tiers[a] != tiers[b] {
+                tiers[a].cmp(&tiers[b])
             } else {
-                let score_a = cand_a.score.unwrap_or(0.0);
-                let score_b = cand_b.score.unwrap_or(0.0);
+                let score_a = candidates[a].score.unwrap_or(0.0);
+                let score_b = candidates[b].score.unwrap_or(0.0);
                 let score_cmp = score_b.total_cmp(&score_a);
                 if score_cmp != std::cmp::Ordering::Equal {
                     score_cmp
                 } else {
-                    idx_a.cmp(idx_b)
+                    a.cmp(&b)
                 }
             }
         });
 
-        tagged.into_iter().map(|(_, _, cand)| cand).collect()
+        let mut sorted = Vec::with_capacity(candidates.len());
+        let mut opt_candidates: Vec<Option<SessionCandidate>> =
+            candidates.into_iter().map(Some).collect();
+        for idx in indices {
+            if let Some(cand) = opt_candidates[idx].take() {
+                sorted.push(cand);
+            }
+        }
+        sorted
     }
 
     /// Discovers candidates across tmux, config, git, and zoxide, then deduplicates them.
     pub fn collect_from_system(&self, config: &omega_config::Config) -> Vec<SessionCandidate> {
         let mut all = Vec::new();
 
-        // 1. Tmux
+        // 1. Tmux sessions
+        let mut tmux_sessions = Vec::new();
         if let Ok(output) = std::process::Command::new("tmux")
             .args([
                 "list-sessions",
@@ -140,7 +143,7 @@ impl SessionCollector {
             && output.status.success()
         {
             let raw = String::from_utf8_lossy(&output.stdout);
-            all.extend(crate::discovery::parse_tmux_output(&raw));
+            tmux_sessions = crate::discovery::parse_tmux_output(&raw);
         }
 
         // 1b. Active Tmux Windows
@@ -149,13 +152,37 @@ impl SessionCollector {
                 "list-windows",
                 "-a",
                 "-F",
-                "#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}",
+                "#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}\t#{window_id}",
             ])
             .output()
             && output.status.success()
         {
             let raw = String::from_utf8_lossy(&output.stdout);
-            all.extend(crate::discovery::parse_tmux_window_candidates(&raw));
+            let window_candidates = crate::discovery::parse_tmux_window_candidates(&raw);
+
+            // Populate window_names on the corresponding tmux session candidates
+            let mut session_windows: std::collections::HashMap<&str, Vec<String>> =
+                std::collections::HashMap::new();
+            for line in raw.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let mut parts = trimmed.split('\t');
+                if let (Some(s_name), Some(w_name)) = (parts.next(), parts.next()) {
+                    session_windows.entry(s_name).or_default().push(w_name.to_owned());
+                }
+            }
+            for sess in &mut tmux_sessions {
+                if let Some(wins) = session_windows.get(sess.name.as_str()) {
+                    sess.window_names = wins.clone();
+                }
+            }
+
+            all.extend(tmux_sessions);
+            all.extend(window_candidates);
+        } else {
+            all.extend(tmux_sessions);
         }
 
         // 2. Config aliases & static roots

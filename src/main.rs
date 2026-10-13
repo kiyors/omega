@@ -10,6 +10,14 @@ use omega_session::{PreviewGenerator, SessionCandidate, SessionSource};
 use omega_tmux::{RealTmuxClient, TmuxClient};
 use std::time::Duration;
 
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        ratatui::restore();
+    }
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -71,6 +79,7 @@ fn main() -> Result<()> {
     });
 
     let mut terminal = ratatui::init();
+    let _guard = TerminalGuard;
     let events = EventHandler::new(Duration::from_millis(50));
     let mut last_requested_target: Option<(String, std::path::PathBuf)> = None;
 
@@ -137,18 +146,19 @@ fn main() -> Result<()> {
                     break None;
                 }
                 // Check custom keymaps
-                let key_str = match key.code {
-                    KeyCode::Enter => Some("<CR>".to_owned()),
-                    KeyCode::Esc => Some("<Esc>".to_owned()),
+                let action = match key.code {
+                    KeyCode::Enter => config.keymaps.get("<CR>"),
+                    KeyCode::Esc => config.keymaps.get("<Esc>"),
                     KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        Some(format!("<C-{c}>"))
+                        let buf = [b'<', b'C', b'-', c as u8, b'>'];
+                        std::str::from_utf8(&buf)
+                            .ok()
+                            .and_then(|k| config.keymaps.get(k))
                     }
                     _ => None,
                 };
 
-                if let Some(k) = key_str
-                    && let Some(action) = config.keymaps.get(&k)
-                {
+                if let Some(action) = action {
                     match action.as_str() {
                         "connect" => break app.selected_item().cloned(),
                         "kill_session" => {
@@ -225,12 +235,13 @@ fn main() -> Result<()> {
     };
 
     // Restore terminal before switching tmux
-    ratatui::restore();
+    drop(_guard);
 
     if let Some(target) = chosen_session {
         if target.source == SessionSource::Window {
             let runner = omega_tmux::TmuxActionRunner::new();
-            runner.switch_window(&mut tmux_client, &target.name)?;
+            let window_target = target.alias.as_deref().unwrap_or(&target.name);
+            runner.switch_window(&mut tmux_client, window_target)?;
         } else {
             smart_connect(
                 &mut tmux_client,

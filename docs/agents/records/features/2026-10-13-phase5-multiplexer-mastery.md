@@ -68,3 +68,30 @@ Implemented test-first following Red-Green-Refactor across all pre-agreed seams:
 
 - **Seam 5 (`crates/session/tests/window_navigation_test.rs`)**:
    - `test_window_preview_captures_pane`: Verifies `capture_pane` for `<session>:<window>` target identifiers.
+
+---
+
+## 3. Post-Audit Optimizations & Robustness Refinements
+
+Following an exhaustive subagent safety audit spanning spec completeness, performance/zero-copy adherence (`AGENTS.md` Section 5), and runtime edge cases:
+
+1. **Scratchpad Toggle & Name Sanitization**:
+   - Added `current_session` and `detach_client` to `TmuxClient`.
+   - `omega scratch` now detects if the user is already inside the active scratchpad session; if so, it detaches the client (`tmux detach-client`), toggling the popup off cleanly.
+   - Introduced `sanitize_session_name` replacing illegal chars (`.`, `:`, spaces, quotes, shell metachars) with `_`, escaping shell arguments safely in `display-popup`.
+2. **Window ID Targeting for Dot/Colon-containing Window Names**:
+   - Extended `list_windows_raw` and `parse_tmux_window_candidates` with optional 5th column `#{window_id}` (`@id`), stored in `candidate.alias`.
+   - Windows with dots (e.g. `main.rs`, `app.py`) switch via `@id`, avoiding tmux's `.` pane separator collision.
+3. **Zero-Allocation Hot-Path Optimizations (`AGENTS.md` Section 5)**:
+   - `format_windows_peek`: Replaced `.to_string().len()` with integer digit counter and eliminated intermediate `Vec` allocations and `shown.join(" ")`.
+   - `parse_color`: Replaced `collect::<Vec<_>>()` with iterator `.next()` calls for zero intermediate allocations.
+   - `generate_dir_preview`: Replaced `"  ".repeat(depth)` string allocations with direct buffer pushes.
+   - `harvest_and_sort_candidates`: Skipped redundant second `dedup_candidates` and `apply_sort_order` pass when no custom sources/hooks mutate candidates, cutting duplicate `fs::canonicalize` disk queries on CLI launch.
+   - TUI Event Loop: Replaced heap `String` format per keypress with stack-allocated byte buffer lookup.
+4. **Window Peek Production Activation**:
+   - Populated `candidate.window_names` during tmux harvesting so the `format_windows_peek` ribbon renders active window names for tmux sessions.
+5. **Terminal RAII Cleanup Guard**:
+   - Introduced `TerminalGuard` implementing `Drop` around `ratatui::restore()` to ensure terminal restoration even upon early error returns or panics.
+6. **Scoped Shell Invocations**:
+   - Replaced global `exec </dev/tty` in Zsh and Bash widgets with scoped command redirection (`omega </dev/tty>` and `omega window </dev/tty>`).
+   - Added `bind-key -n M-o run-shell "omega scratch"` to default tmux keybinding template.

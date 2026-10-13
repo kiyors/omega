@@ -226,11 +226,17 @@ pub trait TmuxClient {
     fn switch_last(&mut self) -> io::Result<()>;
     fn capture_pane(&self, target: &str) -> io::Result<String>;
 
-    /// Lists all windows across sessions: #{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}
+    /// Lists all windows across sessions: #{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}\t#{window_id}
     fn list_windows_raw(&self) -> io::Result<String>;
 
     /// Displays a popup in tmux: `tmux display-popup -E -w <width> -h <height> <command>`
     fn display_popup(&mut self, width: &str, height: &str, command: &str) -> io::Result<()>;
+
+    /// Returns the active session name if attached inside tmux, or None.
+    fn current_session(&self) -> io::Result<Option<String>>;
+
+    /// Detaches the current tmux client.
+    fn detach_client(&mut self) -> io::Result<()>;
 
     /// Captures the full session/window/pane state of the tmux server.
     fn capture_state(&self) -> io::Result<Vec<TmuxSessionState>>;
@@ -509,7 +515,7 @@ impl TmuxClient for RealTmuxClient {
                 "list-windows",
                 "-a",
                 "-F",
-                "#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}",
+                "#{session_name}\t#{window_name}\t#{pane_current_path}\t#{window_active}\t#{window_id}",
             ])
             .output()?;
         if !output.status.success() {
@@ -524,6 +530,30 @@ impl TmuxClient for RealTmuxClient {
             .status()?;
         if !status.success() {
             return Err(Error::other("Failed to display tmux popup"));
+        }
+        Ok(())
+    }
+
+    fn current_session(&self) -> io::Result<Option<String>> {
+        let output = Command::new("tmux")
+            .args(["display-message", "-p", "#S"])
+            .output()?;
+        if output.status.success() {
+            let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if name.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(name))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn detach_client(&mut self) -> io::Result<()> {
+        let status = Command::new("tmux").arg("detach-client").status()?;
+        if !status.success() {
+            return Err(Error::other("Failed to detach tmux client"));
         }
         Ok(())
     }
@@ -599,6 +629,8 @@ pub struct MockTmuxClient {
     pub raw_windows: String,
     pub popups: Vec<(String, String, String)>,
     pub snapshot_state: Vec<TmuxSessionState>,
+    pub current_session_name: Option<String>,
+    pub detached: bool,
 }
 
 impl MockTmuxClient {
@@ -748,6 +780,15 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn current_session(&self) -> io::Result<Option<String>> {
+        Ok(self.current_session_name.clone())
+    }
+
+    fn detach_client(&mut self) -> io::Result<()> {
+        self.detached = true;
+        Ok(())
+    }
+
     fn capture_state(&self) -> io::Result<Vec<TmuxSessionState>> {
         Ok(self.snapshot_state.clone())
     }
@@ -756,6 +797,22 @@ impl TmuxClient for MockTmuxClient {
 // ---------------------------------------------------------------------------
 // Tmux Action Runner
 // ---------------------------------------------------------------------------
+
+#[must_use]
+pub fn sanitize_session_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| match c {
+            '.' | ':' | ' ' | ';' | '&' | '|' | '\'' | '"' | '$' | '`' | '\\' => '_',
+            other => other,
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "scratch".to_owned()
+    } else {
+        sanitized
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct TmuxActionRunner;
@@ -800,12 +857,18 @@ impl TmuxActionRunner {
     }
 
     pub fn scratchpad<T: TmuxClient>(&self, client: &mut T, name: &str) -> io::Result<()> {
+        let target_name = sanitize_session_name(name);
         if client.is_inside_tmux() {
-            let cmd = format!("tmux new-session -A -s {name}");
+            if let Ok(Some(current)) = client.current_session()
+                && current == target_name
+            {
+                return client.detach_client();
+            }
+            let cmd = format!("tmux new-session -A -s '{target_name}'");
             client.display_popup("80%", "80%", &cmd)
         } else {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            self.connect(client, name, &cwd, None)
+            self.connect(client, &target_name, &cwd, None)
         }
     }
 

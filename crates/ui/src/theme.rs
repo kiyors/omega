@@ -29,12 +29,13 @@ pub fn parse_color(input: &str) -> Color {
     }
 
     if let Some(inner) = s.strip_prefix("rgb(").and_then(|v| v.strip_suffix(')')) {
-        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
-        if parts.len() == 3
+        let mut parts = inner.split(',').map(str::trim);
+        if let (Some(r_str), Some(g_str), Some(b_str), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
             && let (Ok(r), Ok(g), Ok(b)) = (
-                parts[0].parse::<u8>(),
-                parts[1].parse::<u8>(),
-                parts[2].parse::<u8>(),
+                r_str.parse::<u8>(),
+                g_str.parse::<u8>(),
+                b_str.parse::<u8>(),
             )
         {
             return Color::Rgb(r, g, b);
@@ -93,6 +94,7 @@ pub struct ResolvedTheme {
     pub badge_config: Color,
     pub badge_zoxide: Color,
     pub badge_custom: Color,
+    pub badge_window: Color,
     pub inline_windows: Color,
     pub group_separator: Color,
     pub preview_border: Color,
@@ -125,6 +127,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x94, 0xe2, 0xd5),             // Teal
             badge_zoxide: Color::Rgb(0xf9, 0xe2, 0xaf),             // Yellow
             badge_custom: Color::Rgb(0x74, 0xc7, 0xec),             // Sapphire
+            badge_window: Color::Rgb(0x89, 0xdc, 0xeb),             // Sky
             inline_windows: Color::Rgb(0x93, 0x99, 0xb2),           // Overlay2
             group_separator: Color::Rgb(0x45, 0x47, 0x5a),          // Surface1
             preview_border: Color::Rgb(0x58, 0x5b, 0x70),           // Surface2
@@ -157,6 +160,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x8b, 0xd5, 0xca),
             badge_zoxide: Color::Rgb(0xee, 0xd4, 0x9f),
             badge_custom: Color::Rgb(0x7d, 0xc4, 0xe4),
+            badge_window: Color::Rgb(0x91, 0xd7, 0xe3),
             inline_windows: Color::Rgb(0x93, 0x9a, 0xb7),
             group_separator: Color::Rgb(0x49, 0x4d, 0x64),
             preview_border: Color::Rgb(0x5b, 0x60, 0x78),
@@ -189,6 +193,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x81, 0xc8, 0xbe),
             badge_zoxide: Color::Rgb(0xe5, 0xc8, 0x90),
             badge_custom: Color::Rgb(0x85, 0xc1, 0xdc),
+            badge_window: Color::Rgb(0x99, 0xd1, 0xdb),
             inline_windows: Color::Rgb(0x94, 0x9c, 0xbb),
             group_separator: Color::Rgb(0x51, 0x57, 0x6d),
             preview_border: Color::Rgb(0x62, 0x68, 0x80),
@@ -221,6 +226,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x17, 0x92, 0x99),
             badge_zoxide: Color::Rgb(0xdf, 0x8e, 0x1d),
             badge_custom: Color::Rgb(0x20, 0x9f, 0xb5),
+            badge_window: Color::Rgb(0x04, 0xa5, 0xe5),
             inline_windows: Color::Rgb(0x7c, 0x7f, 0x93),
             group_separator: Color::Rgb(0xbc, 0xc0, 0xcc),
             preview_border: Color::Rgb(0xac, 0xb0, 0xbe),
@@ -253,6 +259,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x7d, 0xcf, 0xff),
             badge_zoxide: Color::Rgb(0xe0, 0xaf, 0x68),
             badge_custom: Color::Rgb(0x2a, 0xc3, 0xde),
+            badge_window: Color::Rgb(0x7d, 0xcf, 0xff),
             inline_windows: Color::Rgb(0x56, 0x5f, 0x89),
             group_separator: Color::Rgb(0x3b, 0x42, 0x61),
             preview_border: Color::Rgb(0x3b, 0x42, 0x61),
@@ -285,6 +292,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x8f, 0xbc, 0xbb),
             badge_zoxide: Color::Rgb(0xeb, 0xcb, 0x8b),
             badge_custom: Color::Rgb(0x5e, 0x81, 0xac),
+            badge_window: Color::Rgb(0x88, 0xc0, 0xd0),
             inline_windows: Color::Rgb(0x61, 0x6e, 0x88),
             group_separator: Color::Rgb(0x43, 0x4c, 0x5e),
             preview_border: Color::Rgb(0x43, 0x4c, 0x5e),
@@ -317,6 +325,7 @@ impl ResolvedTheme {
             badge_config: Color::Rgb(0x8e, 0xc0, 0x7c),
             badge_zoxide: Color::Rgb(0xfa, 0xbd, 0x2f),
             badge_custom: Color::Rgb(0x7c, 0xa6, 0x62),
+            badge_window: Color::Rgb(0x8e, 0xc0, 0x7c),
             inline_windows: Color::Rgb(0xa8, 0x99, 0x84),
             group_separator: Color::Rgb(0x50, 0x49, 0x45),
             preview_border: Color::Rgb(0x50, 0x49, 0x45),
@@ -349,6 +358,7 @@ impl ResolvedTheme {
             badge_config: Color::Cyan,
             badge_zoxide: Color::Yellow,
             badge_custom: Color::Cyan,
+            badge_window: Color::Cyan,
             inline_windows: Color::DarkGray,
             group_separator: Color::DarkGray,
             preview_border: Color::Cyan,
@@ -428,6 +438,9 @@ impl ResolvedTheme {
         }
         if let Some(c) = &config.badge_custom {
             theme.badge_custom = parse_color(c);
+        }
+        if let Some(c) = &config.badge_window {
+            theme.badge_window = parse_color(c);
         }
         if let Some(c) = &config.inline_windows {
             theme.inline_windows = parse_color(c);

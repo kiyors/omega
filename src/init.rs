@@ -5,6 +5,7 @@ use crate::cli::ShellTarget;
 pub const TMUX_KEYBINDINGS: &str = r#"# Omega Tmux Keybindings
 bind-key -n M-s display-popup -E -w 85% -h 80% "omega"
 bind-key -n M-w display-popup -E -w 85% -h 80% "omega window"
+bind-key -n M-o run-shell "omega scratch"
 bind-key L run-shell "omega last"
 bind-key 9 run-shell "omega root"
 "#;
@@ -18,8 +19,7 @@ pub fn generate_init_script(target: ShellTarget, include_tmux: bool) -> String {
             script.push_str(
                 r#"# Omega Zsh Integration
 omega-widget() {
-  exec </dev/tty
-  omega
+  omega </dev/tty
   zle && zle reset-prompt
 }
 zle -N omega-widget
@@ -27,8 +27,7 @@ bindkey '\es' omega-widget
 bindkey '^[s' omega-widget
 
 omega-window-widget() {
-  exec </dev/tty
-  omega window
+  omega window </dev/tty
   zle && zle reset-prompt
 }
 zle -N omega-window-widget
@@ -41,15 +40,13 @@ bindkey '^[w' omega-window-widget
             script.push_str(
                 r#"# Omega Bash Integration
 _omega_bind() {
-  exec </dev/tty
-  omega
+  omega </dev/tty
 }
 bind -x '"\es": _omega_bind'
 bind -x '"\e[s": _omega_bind'
 
 _omega_window_bind() {
-  exec </dev/tty
-  omega window
+  omega window </dev/tty
 }
 bind -x '"\ew": _omega_window_bind'
 bind -x '"\e[w": _omega_window_bind'

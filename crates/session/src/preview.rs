@@ -19,7 +19,8 @@ impl PreviewGenerator {
     pub fn generate<T: TmuxClient>(&self, candidate: &SessionCandidate, tmux: &T) -> String {
         match candidate.source {
             SessionSource::Tmux | SessionSource::Window => {
-                let raw = tmux.capture_pane(&candidate.name).unwrap_or_else(|e| {
+                let target = candidate.alias.as_deref().unwrap_or(&candidate.name);
+                let raw = tmux.capture_pane(target).unwrap_or_else(|e| {
                     format!("Error capturing tmux pane for '{}': {}", candidate.name, e)
                 });
                 if raw.trim().is_empty() {
@@ -115,13 +116,16 @@ impl PreviewGenerator {
             }
 
             let depth = entry.depth();
-            let indent = "  ".repeat(depth.saturating_sub(1));
-            let marker = if entry.file_type().is_dir() {
+            for _ in 1..depth {
+                output.push_str("  ");
+            }
+            output.push_str(if entry.file_type().is_dir() {
                 "📁 "
             } else {
                 "📄 "
-            };
-            output.push_str(&format!("{}{}{}\n", indent, marker, name));
+            });
+            output.push_str(&name);
+            output.push('\n');
             count += 1;
         }
 

@@ -153,9 +153,62 @@ fn test_scratchpad_inside_tmux() {
         vec![(
             "80%".to_string(),
             "80%".to_string(),
-            "tmux new-session -A -s scratch".to_string(),
+            "tmux new-session -A -s 'scratch'".to_string(),
         )]
     );
+}
+
+#[test]
+fn test_scratchpad_toggle_dismisses_when_inside_scratch() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = true;
+    mock.current_session_name = Some("scratch".to_string());
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.scratchpad(&mut mock, "scratch");
+
+    assert!(result.is_ok());
+    assert!(
+        mock.detached,
+        "Client should be detached to dismiss scratch popup"
+    );
+    assert!(
+        mock.popups.is_empty(),
+        "Popup should not be opened when already inside scratch session"
+    );
+}
+
+#[test]
+fn test_scratchpad_sanitizes_illegal_characters() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = true;
+    mock.current_session_name = Some("main".to_string());
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.scratchpad(&mut mock, "my scratch:v1.0;evil");
+
+    assert!(result.is_ok());
+    assert_eq!(
+        mock.popups,
+        vec![(
+            "80%".to_string(),
+            "80%".to_string(),
+            "tmux new-session -A -s 'my_scratch_v1_0_evil'".to_string(),
+        )]
+    );
+}
+
+#[test]
+fn test_switch_window_with_window_id() {
+    let mut mock = MockTmuxClient::new();
+    mock.inside_tmux = true;
+
+    let runner = TmuxActionRunner::new();
+    let result = runner.switch_window(&mut mock, "@15");
+
+    assert!(result.is_ok());
+    assert_eq!(mock.selected_windows, vec!["@15"]);
+    assert_eq!(mock.switched_to.as_deref(), Some("@15"));
 }
 
 #[test]

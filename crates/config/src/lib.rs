@@ -154,6 +154,8 @@ pub struct ThemeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub badge_custom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge_window: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub inline_windows: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_separator: Option<String>,
@@ -210,6 +212,7 @@ struct ThemeConfigDetailed {
     pub badge_config: Option<String>,
     pub badge_zoxide: Option<String>,
     pub badge_custom: Option<String>,
+    pub badge_window: Option<String>,
     pub inline_windows: Option<String>,
     pub group_separator: Option<String>,
     pub preview_border: Option<String>,
@@ -245,6 +248,7 @@ impl Default for ThemeConfig {
             badge_config: None,
             badge_zoxide: None,
             badge_custom: None,
+            badge_window: None,
             inline_windows: None,
             group_separator: None,
             preview_border: None,
@@ -283,6 +287,7 @@ impl From<ThemeConfigRaw> for ThemeConfig {
                 badge_config: d.badge_config,
                 badge_zoxide: d.badge_zoxide,
                 badge_custom: d.badge_custom,
+                badge_window: d.badge_window,
                 inline_windows: d.inline_windows,
                 group_separator: d.group_separator,
                 preview_border: d.preview_border,

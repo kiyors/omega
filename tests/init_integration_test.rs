@@ -39,7 +39,10 @@ fn test_cli_parse_init() {
 #[test]
 fn test_generate_init_script_zsh_syntax_and_eval() {
     let script = generate_init_script(ShellTarget::Zsh, false);
-    assert!(script.contains("exec </dev/tty"), "Must allocate clean tty");
+    assert!(
+        script.contains("omega </dev/tty"),
+        "Must allocate clean tty"
+    );
     assert!(script.contains("zle -N omega-widget"));
     assert!(script.contains("bindkey"));
 
@@ -58,7 +61,7 @@ fn test_generate_init_script_zsh_syntax_and_eval() {
 #[test]
 fn test_generate_init_script_bash_syntax() {
     let script = generate_init_script(ShellTarget::Bash, false);
-    assert!(script.contains("exec </dev/tty"));
+    assert!(script.contains("omega </dev/tty"));
     assert!(script.contains("bind -x"));
 
     let status = Command::new("bash").args(["-n", "-c", &script]).status();
@@ -81,6 +84,7 @@ fn test_generate_init_script_tmux_keybindings() {
     assert!(
         script_tmux.contains("bind-key -n M-w display-popup -E -w 85% -h 80% \"omega window\"")
     );
+    assert!(script_tmux.contains("bind-key -n M-o run-shell \"omega scratch\""));
     assert!(script_tmux.contains("bind-key L run-shell \"omega last\""));
     assert!(script_tmux.contains("bind-key 9 run-shell \"omega root\""));
 
@@ -88,5 +92,5 @@ fn test_generate_init_script_tmux_keybindings() {
     assert!(
         script_zsh_with_tmux.contains("bind-key -n M-s display-popup -E -w 85% -h 80% \"omega\"")
     );
-    assert!(script_zsh_with_tmux.contains("exec </dev/tty"));
+    assert!(script_zsh_with_tmux.contains("omega </dev/tty"));
 }

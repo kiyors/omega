@@ -76,4 +76,34 @@ fn test_resolved_theme_with_element_overrides() {
     assert_eq!(theme.inline_windows, Color::Rgb(0x12, 0x34, 0x56));
     // Un-overridden fields should retain Mocha defaults
     assert_eq!(theme.badge_tmux, Color::Rgb(0xa6, 0xe3, 0xa1));
+    assert_eq!(theme.badge_window, Color::Rgb(0x89, 0xdc, 0xeb));
+}
+
+#[test]
+fn test_resolved_theme_catppuccin_flavors() {
+    let mut macchiato_cfg = ThemeConfig::default();
+    macchiato_cfg.name = "catppuccin-macchiato".to_owned();
+    let macchiato = ResolvedTheme::from_config(&macchiato_cfg);
+    assert_eq!(macchiato.border, Color::Rgb(0x8a, 0xad, 0xf4));
+    assert_eq!(macchiato.badge_window, Color::Rgb(0x91, 0xd7, 0xe3));
+
+    let mut frappe_cfg = ThemeConfig::default();
+    frappe_cfg.name = "catppuccin-frappe".to_owned();
+    let frappe = ResolvedTheme::from_config(&frappe_cfg);
+    assert_eq!(frappe.border, Color::Rgb(0x8c, 0xaa, 0xee));
+    assert_eq!(frappe.badge_window, Color::Rgb(0x99, 0xd1, 0xdb));
+
+    let mut latte_cfg = ThemeConfig::default();
+    latte_cfg.name = "catppuccin-latte".to_owned();
+    let latte = ResolvedTheme::from_config(&latte_cfg);
+    assert_eq!(latte.border, Color::Rgb(0x1e, 0x66, 0xf5));
+    assert_eq!(latte.badge_window, Color::Rgb(0x04, 0xa5, 0xe5));
+}
+
+#[test]
+fn test_resolved_theme_badge_window_override() {
+    let mut cfg = ThemeConfig::default();
+    cfg.badge_window = Some("magenta".to_owned());
+    let theme = ResolvedTheme::from_config(&cfg);
+    assert_eq!(theme.badge_window, Color::Magenta);
 }

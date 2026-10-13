@@ -93,3 +93,42 @@ fn test_benchmark_window_aggregation_1000() {
         duration
     );
 }
+
+#[test]
+fn test_parse_tmux_window_candidates_with_window_id() {
+    let raw = "\
+omega\tmain.rs\t/Users/gaurav/personal/projects/omega\t1\t@42
+dotfiles\tvimrc\t/Users/gaurav/.dotfiles\t0\t@43
+";
+
+    let candidates = parse_tmux_window_candidates(raw);
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].name, "omega:main.rs");
+    assert_eq!(candidates[0].alias.as_deref(), Some("@42"));
+    assert_eq!(candidates[1].name, "dotfiles:vimrc");
+    assert_eq!(candidates[1].alias.as_deref(), Some("@43"));
+}
+
+#[test]
+fn test_window_preview_uses_window_id_alias() {
+    let mut mock = MockTmuxClient::new();
+    mock.captured_panes.insert(
+        "@42".to_string(),
+        "\u{1b}[32mCargo check running\u{1b}[0m\n".to_string(),
+    );
+
+    let mut candidate = SessionCandidate::new(
+        "omega:main.rs",
+        "/Users/gaurav/personal/projects/omega",
+        SessionSource::Window,
+    );
+    candidate.alias = Some("@42".to_string());
+
+    let generator = PreviewGenerator::new();
+    let preview = generator.generate(&candidate, &mock);
+
+    assert!(
+        preview.contains("Cargo check running"),
+        "Preview should capture pane content using window id alias"
+    );
+}
