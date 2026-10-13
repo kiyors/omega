@@ -102,6 +102,7 @@ fn test_latest_pointer_resolves_to_newest_auto_save() {
     }
     #[cfg(not(unix))]
     {
+        let _ = second;
         assert!(latest.exists(), "latest.json must exist");
         let loaded = store.load_snapshot(None).expect("load latest");
         assert_eq!(

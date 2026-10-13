@@ -1,6 +1,7 @@
 use clap::Parser;
 use omega::cli::{Cli, Commands, ShellTarget};
 use omega::init::generate_init_script;
+#[cfg(unix)]
 use std::process::Command;
 
 #[test]
@@ -47,14 +48,24 @@ fn test_generate_init_script_zsh_syntax_and_eval() {
     assert!(script.contains("bindkey"));
 
     // Verify script evaluates cleanly in zsh without syntax errors
-    let status = Command::new("zsh")
-        .args(["-c", &format!("eval \"{script}\"")])
-        .status();
-    if let Ok(st) = status {
-        assert!(
-            st.success(),
-            "zsh eval should succeed without syntax errors"
-        );
+    #[cfg(unix)]
+    {
+        let zsh_available = Command::new("zsh")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if zsh_available {
+            let status = Command::new("zsh")
+                .args(["-c", &format!("eval \"{script}\"")])
+                .status();
+            if let Ok(st) = status {
+                assert!(
+                    st.success(),
+                    "zsh eval should succeed without syntax errors"
+                );
+            }
+        }
     }
 }
 
@@ -64,9 +75,19 @@ fn test_generate_init_script_bash_syntax() {
     assert!(script.contains("omega </dev/tty"));
     assert!(script.contains("bind -x"));
 
-    let status = Command::new("bash").args(["-n", "-c", &script]).status();
-    if let Ok(st) = status {
-        assert!(st.success(), "bash -n syntax validation should succeed");
+    #[cfg(unix)]
+    {
+        let bash_available = Command::new("bash")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if bash_available {
+            let status = Command::new("bash").args(["-n", "-c", &script]).status();
+            if let Ok(st) = status {
+                assert!(st.success(), "bash -n syntax validation should succeed");
+            }
+        }
     }
 }
 

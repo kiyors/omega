@@ -6,6 +6,7 @@ use omega_session::collector::SessionCollector;
 use omega_session::models::SessionCandidate;
 use omega_tmux::RealTmuxClient;
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
 use std::io::ErrorKind;

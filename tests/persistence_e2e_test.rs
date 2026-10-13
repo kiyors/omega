@@ -13,6 +13,8 @@
 //!
 //! Tests are skipped gracefully when tmux is unavailable (e.g. Windows CI).
 
+#![cfg(unix)]
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
