@@ -14,9 +14,9 @@ fn test_render_in_popup_mode() {
         SessionCandidate::new("dotfiles", "/home/user/.dotfiles", SessionSource::Alias),
     ];
     let mut app = App::new(items, None);
-    app.popup_enabled = true;
-    app.popup_width = 80;
-    app.popup_height = 80;
+    app.tui.popup = true;
+    app.tui.popup_width = 80;
+    app.tui.popup_height = 80;
 
     terminal.draw(|f| render(f, &app)).unwrap();
 
@@ -36,13 +36,37 @@ fn test_render_in_popup_mode() {
 }
 
 #[test]
+fn test_render_in_popup_border_none() {
+    let backend = TestBackend::new(100, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let items = vec![SessionCandidate::new(
+        "borderless",
+        "/path",
+        SessionSource::Git,
+    )];
+    let mut app = App::new(items, None);
+    app.tui.popup = true;
+    app.tui.popup_border = "none".to_string();
+
+    terminal.draw(|f| render(f, &app)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    // Verify outer area is cleared
+    let row0_str: String = (0..100)
+        .filter_map(|x| buffer.cell((x, 0)).map(|c| c.symbol()))
+        .collect();
+    assert_eq!(row0_str.trim(), "");
+}
+
+#[test]
 fn test_render_in_fullscreen_mode() {
     let backend = TestBackend::new(100, 40);
     let mut terminal = Terminal::new(backend).unwrap();
 
     let items = vec![SessionCandidate::new("test", "/path", SessionSource::Git)];
     let mut app = App::new(items, None);
-    app.popup_enabled = false;
+    app.tui.popup = false;
 
     terminal.draw(|f| render(f, &app)).unwrap();
 

@@ -13,9 +13,9 @@ fn test_app_initialization_and_filtering() {
     let mut app = App::new(items, None);
     assert_eq!(app.filtered.len(), 3);
     assert_eq!(app.selected, 0);
-    assert!(app.popup_enabled);
-    assert_eq!(app.popup_width, 85);
-    assert_eq!(app.popup_height, 80);
+    assert!(app.tui.popup);
+    assert_eq!(app.tui.popup_width, 85);
+    assert_eq!(app.tui.popup_height, 80);
 
     // Apply custom TUI config
     let mut custom_tui = TuiConfig::default();
@@ -24,9 +24,9 @@ fn test_app_initialization_and_filtering() {
     custom_tui.search_prompt = "search> ".to_string();
     app.apply_tui_config(&custom_tui);
 
-    assert!(!app.popup_enabled);
-    assert_eq!(app.popup_width, 75);
-    assert_eq!(app.search_prompt, "search> ");
+    assert!(!app.tui.popup);
+    assert_eq!(app.tui.popup_width, 75);
+    assert_eq!(app.tui.search_prompt, "search> ");
 
     // Test query filtering
     app.query = "bet".to_string();

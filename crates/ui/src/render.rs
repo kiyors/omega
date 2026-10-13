@@ -28,15 +28,30 @@ pub fn resolve_color(color_name: &str) -> Color {
 
 pub fn render(frame: &mut Frame, app: &App) {
     let terminal_area = frame.area();
-    let active_area = if app.popup_enabled {
-        let popup = compute_popup_area(terminal_area, app.popup_width, app.popup_height);
+    let border_color = resolve_color(&app.tui.border_color);
+    let highlight_color = resolve_color(&app.tui.highlight_color);
+    let (popup_borders, popup_border_type) = resolve_borders(&app.tui.popup_border);
+
+    let active_area = if app.tui.popup {
+        let popup = compute_popup_area(terminal_area, app.tui.popup_width, app.tui.popup_height);
         frame.render_widget(Clear, popup);
-        popup
+        if popup_borders != Borders::NONE {
+            let outer_block = Block::default()
+                .borders(popup_borders)
+                .border_type(popup_border_type)
+                .border_style(Style::default().fg(border_color))
+                .title(" Omega ");
+            let inner = outer_block.inner(popup);
+            frame.render_widget(outer_block, popup);
+            inner
+        } else {
+            popup
+        }
     } else {
         terminal_area
     };
 
-    let footer_constraint = if app.show_footer {
+    let footer_constraint = if app.tui.show_footer {
         Constraint::Length(1)
     } else {
         Constraint::Length(0)
@@ -55,18 +70,14 @@ pub fn render(frame: &mut Frame, app: &App) {
     let middle_chunk = chunks.get(1).copied().unwrap_or(active_area);
     let footer_chunk = chunks.get(2).copied().unwrap_or(active_area);
 
-    let border_color = resolve_color(&app.border_color);
-    let highlight_color = resolve_color(&app.highlight_color);
-    let (_, popup_border_type) = resolve_borders(&app.popup_border);
-
     // 1. Search Box
-    let search_text = format!("{}{}", app.search_prompt, app.query);
+    let search_text = format!("{}{}", app.tui.search_prompt, app.query);
     let search_bar = Paragraph::new(search_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(popup_border_type)
-                .title(app.search_title.as_str())
+                .title(app.tui.search_title.as_str())
                 .border_style(Style::default().fg(border_color)),
         )
         .style(Style::default().fg(Color::Cyan));
@@ -90,12 +101,12 @@ pub fn render(frame: &mut Frame, app: &App) {
                 let item = app.items.get(idx)?;
                 let is_selected = i == app.selected;
 
-                let mut spans = Vec::with_capacity(5);
+                let mut spans = Vec::with_capacity(6);
 
                 let prefix = if is_selected { "> " } else { "  " };
                 spans.push(Span::raw(prefix));
 
-                if app.show_badges {
+                if app.tui.show_badges {
                     let badge = match item.source {
                         SessionSource::Tmux => {
                             Span::styled(" [tmux]  ", Style::default().fg(Color::Green))
@@ -120,10 +131,11 @@ pub fn render(frame: &mut Frame, app: &App) {
                     spans.push(badge);
                 }
 
-                if app.show_icons
+                if app.tui.show_icons
                     && let Some(icon) = &item.icon
                 {
-                    spans.push(Span::raw(format!("{icon} ")));
+                    spans.push(Span::raw(icon.as_str()));
+                    spans.push(Span::raw(" "));
                 }
 
                 let name_style = if is_selected {
@@ -135,7 +147,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 };
                 spans.push(Span::styled(&item.name, name_style));
 
-                if app.show_path {
+                if app.tui.show_path {
                     spans.push(Span::styled(
                         format!("  ({})", item.path.display()),
                         Style::default().fg(Color::DarkGray),
@@ -180,7 +192,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     // 3. Footer
-    if app.show_footer && footer_chunk.height > 0 {
+    if app.tui.show_footer && footer_chunk.height > 0 {
         let footer = Paragraph::new(
             " <Enter> Connect | <Up>/<Down> Navigate | <C-u>/<C-d> Scroll Preview | <C-p> Toggle Preview | <Esc> Exit",
         )

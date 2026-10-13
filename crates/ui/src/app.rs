@@ -9,26 +9,15 @@ pub struct App {
     pub selected: usize,
     pub search_engine: SearchEngine,
 
-    // Preview settings
+    // Transient preview state
     pub preview_enabled: bool,
     pub preview_width: u16,
     pub preview_scroll: u16,
     pub preview_content: String,
     pub preview_border: String,
 
-    // Popup & Layout customizations
-    pub popup_enabled: bool,
-    pub popup_width: u16,
-    pub popup_height: u16,
-    pub popup_border: String,
-    pub border_color: String,
-    pub highlight_color: String,
-    pub search_prompt: String,
-    pub search_title: String,
-    pub show_badges: bool,
-    pub show_icons: bool,
-    pub show_path: bool,
-    pub show_footer: bool,
+    // Embedded TUI presentation configuration
+    pub tui: TuiConfig,
 
     scored_buffer: Vec<(usize, i64)>, // Reusable scoring buffer avoiding allocations
 }
@@ -50,19 +39,8 @@ impl App {
             preview_width: default_tui.preview_width,
             preview_scroll: 0,
             preview_content: String::new(),
-            preview_border: default_tui.preview_border,
-            popup_enabled: default_tui.popup,
-            popup_width: default_tui.popup_width,
-            popup_height: default_tui.popup_height,
-            popup_border: default_tui.popup_border,
-            border_color: default_tui.border_color,
-            highlight_color: default_tui.highlight_color,
-            search_prompt: default_tui.search_prompt,
-            search_title: default_tui.search_title,
-            show_badges: default_tui.show_badges,
-            show_icons: default_tui.show_icons,
-            show_path: default_tui.show_path,
-            show_footer: default_tui.show_footer,
+            preview_border: default_tui.preview_border.clone(),
+            tui: default_tui,
             scored_buffer: Vec::with_capacity(count),
         };
         app.refilter();
@@ -73,18 +51,7 @@ impl App {
         self.preview_enabled = cfg.preview;
         self.preview_width = cfg.preview_width;
         self.preview_border.clone_from(&cfg.preview_border);
-        self.popup_enabled = cfg.popup;
-        self.popup_width = cfg.popup_width;
-        self.popup_height = cfg.popup_height;
-        self.popup_border.clone_from(&cfg.popup_border);
-        self.border_color.clone_from(&cfg.border_color);
-        self.highlight_color.clone_from(&cfg.highlight_color);
-        self.search_prompt.clone_from(&cfg.search_prompt);
-        self.search_title.clone_from(&cfg.search_title);
-        self.show_badges = cfg.show_badges;
-        self.show_icons = cfg.show_icons;
-        self.show_path = cfg.show_path;
-        self.show_footer = cfg.show_footer;
+        self.tui = cfg.clone();
     }
 
     pub fn refilter(&mut self) {

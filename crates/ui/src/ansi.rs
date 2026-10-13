@@ -75,10 +75,18 @@ fn update_sgr_style(mut style: Style, params_str: &str) -> Style {
         return Style::default();
     }
 
-    let codes: Vec<u8> = params_str
-        .split(';')
-        .filter_map(|p| p.parse::<u8>().ok())
-        .collect();
+    let mut codes_buf = [0u8; 16];
+    let mut count = 0;
+    for p in params_str.split(';') {
+        if let Ok(c) = p.parse::<u8>()
+            && count < codes_buf.len()
+            && let Some(slot) = codes_buf.get_mut(count)
+        {
+            *slot = c;
+            count = count.saturating_add(1);
+        }
+    }
+    let codes = codes_buf.get(..count).unwrap_or(&[]);
 
     let mut idx = 0;
     while idx < codes.len() {
