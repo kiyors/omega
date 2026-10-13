@@ -34,6 +34,42 @@ fn test_lua_custom_naming_hook() {
 }
 
 #[test]
+fn test_lua_chainable_naming_hooks() {
+    let engine = LuaEngine::new().expect("failed to init engine");
+    let script = r#"
+        local omega = require("omega")
+        -- Hook 1 only handles /first
+        omega.session_name(function(path, _)
+            if path == "/first" then return "one" end
+            return nil
+        end)
+        -- Hook 2 only handles /second
+        omega.session_name(function(path, _)
+            if path == "/second" then return "two" end
+            return nil
+        end)
+    "#;
+    engine.load_string(script).expect("failed to load script");
+
+    assert_eq!(
+        engine
+            .call_session_name_hook(Path::new("/first"), None)
+            .as_deref(),
+        Some("one")
+    );
+    assert_eq!(
+        engine
+            .call_session_name_hook(Path::new("/second"), None)
+            .as_deref(),
+        Some("two")
+    );
+    assert_eq!(
+        engine.call_session_name_hook(Path::new("/other"), None),
+        None
+    );
+}
+
+#[test]
 fn test_lua_lifecycle_event_hook() {
     let engine = LuaEngine::new().expect("failed to init engine");
     let script = r#"

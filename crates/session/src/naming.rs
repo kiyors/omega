@@ -32,36 +32,40 @@ impl NamingPipeline {
         custom_hook_result: Option<&str>,
         substitutions: &[omega_config::NameSubstitution],
     ) -> String {
+        let compiled: Vec<(&omega_config::NameSubstitution, Option<regex::Regex>)> = substitutions
+            .iter()
+            .map(|s| (s, regex::Regex::new(&s.find).ok()))
+            .collect();
+
         let path_str = path.to_string_lossy();
-        let transformed_path = apply_substitutions(path_str.into_owned(), substitutions);
+        let transformed_path = apply_compiled_substitutions(path_str.into_owned(), &compiled);
         let effective_path = Path::new(&transformed_path);
 
         let base_raw = if let Some(custom) = custom_hook_result {
             custom.to_owned()
         } else {
-            let components: Vec<&str> = effective_path
-                .components()
-                .filter_map(|c| match c {
-                    std::path::Component::Normal(os_str) => os_str.to_str(),
-                    _ => None,
-                })
-                .collect();
-
             let count = dir_length.max(1);
-            let selected: &[&str] = if components.len() <= count {
-                &components
-            } else {
-                &components[components.len() - count..]
-            };
+            let mut rev_parts = Vec::with_capacity(count);
+            for c in effective_path.components().rev() {
+                if let std::path::Component::Normal(os_str) = c
+                    && let Some(s) = os_str.to_str()
+                {
+                    rev_parts.push(s);
+                    if rev_parts.len() == count {
+                        break;
+                    }
+                }
+            }
+            rev_parts.reverse();
 
-            if selected.is_empty() {
+            if rev_parts.is_empty() {
                 "root".to_owned()
             } else {
-                selected.join("-")
+                rev_parts.join("-")
             }
         };
 
-        let final_raw = apply_substitutions(base_raw, substitutions);
+        let final_raw = apply_compiled_substitutions(base_raw, &compiled);
         let sanitized = self.sanitize(&final_raw);
 
         // Check collision
@@ -119,12 +123,12 @@ impl NamingPipeline {
     }
 }
 
-fn apply_substitutions(
+fn apply_compiled_substitutions(
     mut target: String,
-    substitutions: &[omega_config::NameSubstitution],
+    compiled: &[(&omega_config::NameSubstitution, Option<regex::Regex>)],
 ) -> String {
-    for subst in substitutions {
-        if let Ok(re) = regex::Regex::new(&subst.find) {
+    for (subst, re_opt) in compiled {
+        if let Some(re) = re_opt {
             target = re.replace_all(&target, subst.replace.as_str()).into_owned();
         } else {
             target = target.replace(&subst.find, &subst.replace);

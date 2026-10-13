@@ -158,3 +158,42 @@ fn test_lua_engine_from_config_dir_standalone_plugins() {
     let val: String = engine.eval_global("STANDALONE").unwrap();
     assert_eq!(val, "loaded");
 }
+
+#[test]
+fn test_lua_engine_isolated_plugin_errors() {
+    let dir = tempdir().unwrap();
+    let plugins_dir = dir.path().join("plugins");
+    std::fs::create_dir_all(&plugins_dir).unwrap();
+
+    // 01_broken.lua has a syntax error
+    let broken = plugins_dir.join("01_broken.lua");
+    std::fs::write(&broken, "this is not valid lua code !!!").unwrap();
+
+    // 02_working.lua should still execute successfully!
+    let working = plugins_dir.join("02_working.lua");
+    std::fs::write(&working, "_G.AFTER_BROKEN = 'survived'").unwrap();
+
+    let engine =
+        LuaEngine::from_config_dir(dir.path()).expect("should bootstrap despite broken plugin");
+    let val: String = engine.eval_global("AFTER_BROKEN").unwrap();
+    assert_eq!(val, "survived");
+
+    let diags = engine.diagnostics();
+    assert_eq!(diags.len(), 1);
+    assert!(diags[0].contains("Plugin error in"));
+}
+
+#[test]
+fn test_lua_globals_version_and_log() {
+    let engine = LuaEngine::new().unwrap();
+    let script = r#"
+        local omega = require("omega")
+        _G.OMEGA_VER = omega.version
+        omega.log.info("Testing info log")
+        omega.log.warn("Testing warn log")
+        omega.log.error("Testing error log")
+    "#;
+    engine.load_string(script).unwrap();
+    let ver: String = engine.eval_global("OMEGA_VER").unwrap();
+    assert_eq!(ver, env!("CARGO_PKG_VERSION"));
+}

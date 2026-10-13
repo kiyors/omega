@@ -27,6 +27,8 @@ omega/
 │   ├── event.rs               # Event polling loop (crossterm keyboard/tick events)
 │   └── ui.rs                  # Two-pane Ratatui rendering engine & responsive layout composition
 ├── tests/                     # Integration test suites & end-to-end scenarios
+├── nix/                       # Nix packaging (package.nix) & development shell (devshell.nix)
+├── Formula/                   # Homebrew tap formula (omega.rb)
 ├── docs/                      # Authoritative knowledge base
 │   ├── adr/                   # Architecture Decision Records
 │   └── agents/                # Operational records & agent configurations
@@ -35,6 +37,8 @@ omega/
 │       ├── triage-labels.md   # Canonical triage label taxonomy
 │       └── domain.md          # Domain documentation consumption rules
 ├── Cargo.toml                 # Package / Workspace manifest
+├── rust-toolchain.toml        # Locked Rust toolchain channel (1.99.0)
+├── flake.nix                  # Minimal root Nix flake delegating to nix/
 ├── AGENTS.md                  # Master agent operating directives
 └── ARCHITECTURE.md            # This living document
 ```

@@ -103,3 +103,30 @@ fn test_doctor_flags_missing_tmux_and_syntax_error_in_config() {
     let zoxide_item = report.items.iter().find(|i| i.name == "zoxide").unwrap();
     assert!(matches!(zoxide_item.status, DoctorStatus::Warning));
 }
+
+#[test]
+fn test_doctor_validates_config_json_when_lua_absent() {
+    let mut commands = HashMap::new();
+    commands.insert("tmux".to_owned(), Some("tmux 3.4".to_owned()));
+    commands.insert("git".to_owned(), Some("git version 2.44.0".to_owned()));
+
+    let env = MockDoctorEnv {
+        commands,
+        socket_running: true,
+    };
+
+    let dir = tempdir().unwrap();
+    let json_path = dir.path().join("config.json");
+    std::fs::write(
+        &json_path,
+        r#"{"aliases": [{"name": "api", "path": "/tmp/api"}]}"#,
+    )
+    .unwrap();
+
+    let report = run_doctor(&env, Some(dir.path()));
+    assert!(report.all_ok);
+
+    let config_item = report.items.iter().find(|i| i.name == "config").unwrap();
+    assert!(matches!(config_item.status, DoctorStatus::Ok));
+    assert!(config_item.message.contains("Valid config.json"));
+}

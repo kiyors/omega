@@ -130,6 +130,7 @@ pub fn run_doctor<E: DoctorEnv>(env: &E, config_dir: Option<&Path>) -> DoctorRep
         Some(dir) => {
             let init_lua = dir.join("init.lua");
             let plugins_dir = dir.join("plugins");
+            let config_json = dir.join("config.json");
             if init_lua.exists() || plugins_dir.is_dir() {
                 match LuaEngine::from_config_dir(&dir) {
                     Ok(engine) => {
@@ -157,11 +158,36 @@ pub fn run_doctor<E: DoctorEnv>(env: &E, config_dir: Option<&Path>) -> DoctorRep
                         });
                     }
                 }
+            } else if config_json.exists() {
+                match Config::load_from_path(&config_json) {
+                    Ok(cfg) => {
+                        items.push(DoctorItem {
+                            name: "config".to_owned(),
+                            status: DoctorStatus::Ok,
+                            message: format!(
+                                "Valid config.json at {} ({} aliases)",
+                                config_json.display(),
+                                cfg.aliases.len()
+                            ),
+                        });
+                    }
+                    Err(e) => {
+                        all_ok = false;
+                        items.push(DoctorItem {
+                            name: "config".to_owned(),
+                            status: DoctorStatus::Error,
+                            message: format!(
+                                "Error loading config.json at {}: {e}",
+                                config_json.display()
+                            ),
+                        });
+                    }
+                }
             } else {
                 items.push(DoctorItem {
                     name: "config".to_owned(),
                     status: DoctorStatus::Ok,
-                    message: "No init.lua found, using defaults".to_owned(),
+                    message: "No init.lua or config.json found, using defaults".to_owned(),
                 });
             }
         }

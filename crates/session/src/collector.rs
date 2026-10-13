@@ -111,10 +111,14 @@ impl SessionCollector {
         }
 
         let mut results = self.dedup_candidates(all, config.hide_attached);
+        let home = std::env::var("HOME").ok();
         for cand in &mut results {
             if cand.icon.is_none() {
-                if let Some(rule) = crate::layout::match_wildcard(&cand.path, &config.wildcards)
-                    && let Some(icon) = &rule.icon
+                if let Some(rule) = crate::layout::match_wildcard_with_home(
+                    &cand.path,
+                    &config.wildcards,
+                    home.as_deref(),
+                ) && let Some(icon) = &rule.icon
                 {
                     cand.icon = Some(icon.clone());
                 } else if let Some(icon) = config.icons.get(cand.source.as_str()) {

@@ -62,3 +62,29 @@ fn test_connect_provisions_layout_from_lua_config() {
     let hook_val: String = engine.eval_global("HOOK_CREATED").unwrap();
     assert_eq!(hook_val, "my-project");
 }
+
+#[test]
+fn test_connect_runs_wildcard_startup_command() {
+    let mut tmux = MockTmuxClient::new();
+    let config = omega_config::Config {
+        wildcards: vec![omega_config::WildcardRule {
+            pattern: "/tmp/rust/*".to_owned(),
+            startup_command: Some("cargo check".to_owned()),
+            icon: Some("🦀".to_owned()),
+            windows: Vec::new(),
+        }],
+        ..Default::default()
+    };
+
+    let cmd = Commands::Connect {
+        target: "/tmp/rust/myapp".to_owned(),
+        switch: false,
+        command: None,
+    };
+
+    execute_command_with_engine(cmd, &mut tmux, &config, None).unwrap();
+
+    assert_eq!(tmux.created_sessions.len(), 1);
+    assert_eq!(tmux.sent_keys.len(), 1);
+    assert_eq!(tmux.sent_keys[0].1, "cargo check");
+}

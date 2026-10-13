@@ -66,7 +66,11 @@ pub fn execute_command_with_engine<T: TmuxClient>(
                         (alias.name.clone(), path)
                     } else {
                         let target_path = PathBuf::from(&target);
-                        if target_path.exists() {
+                        if target.starts_with('/')
+                            || target.starts_with('~')
+                            || target.starts_with('.')
+                            || target_path.exists()
+                        {
                             let existing: Vec<(&str, &Path)> = candidates
                                 .iter()
                                 .filter(|c| c.source == SessionSource::Tmux)
@@ -333,10 +337,19 @@ pub fn smart_connect<T: TmuxClient>(
     engine: Option<&omega_config::LuaEngine>,
 ) -> Result<()> {
     if !tmux.has_session(session_name) {
-        let windows_to_provision = if let Some(alias) = config
-            .aliases
-            .iter()
-            .find(|a| a.name == session_name || a.path == session_path.to_string_lossy())
+        let matched_alias = config.aliases.iter().find(|a| {
+            if a.name == session_name {
+                return true;
+            }
+            if let Some(rest) = a.path.strip_prefix("~/")
+                && let Ok(home) = std::env::var("HOME")
+            {
+                return format!("{home}/{rest}") == session_path.to_string_lossy();
+            }
+            a.path == session_path.to_string_lossy()
+        });
+
+        let windows_to_provision = if let Some(alias) = matched_alias
             && !alias.windows.is_empty()
         {
             Some(&alias.windows)
@@ -361,7 +374,10 @@ pub fn smart_connect<T: TmuxClient>(
                 omega_session::layout::match_wildcard(session_path, &config.wildcards)
                     .and_then(|r| r.startup_command.as_deref())
             });
-            tmux.create_session(session_name, session_name, session_path, startup_cmd)?;
+            let created = tmux.create_session(session_name, session_name, session_path, None)?;
+            if let Some(cmd) = startup_cmd {
+                tmux.send_keys(&created.pane_id, cmd)?;
+            }
         }
 
         if let Some(eng) = engine {

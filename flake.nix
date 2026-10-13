@@ -1,5 +1,5 @@
 {
-  description = "A Nix-flake-based Rust development environment";
+  description = "A high-performance terminal session and workspace navigator";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -11,7 +11,6 @@
 
   outputs =
     { self, ... }@inputs:
-
     let
       supportedSystems = [
         "x86_64-linux"
@@ -26,9 +25,7 @@
           f {
             pkgs = import inputs.nixpkgs {
               inherit system;
-              overlays = [
-                inputs.self.overlays.default
-              ];
+              overlays = [ self.overlays.default ];
             };
           }
         );
@@ -38,7 +35,10 @@
         rustToolchain =
           with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
           combine (
-            with stable;
+            with (toolchainOf {
+              channel = "1.99.0";
+              sha256 = "sha256-zm3dyIY2T414ZRR3EhLOvptzG6gta4WZUcawzMUWtqI=";
+            });
             [
               clippy
               rustc
@@ -49,60 +49,22 @@
           );
       };
 
+      # Delegates derivation (buildRustPackage with pname = "omega") to ./nix/package.nix
       packages = forEachSupportedSystem (
         { pkgs }:
         {
-          default = pkgs.rustPlatform.buildRustPackage {
-            pname = "omega";
-            version = "0.1.0";
-            src = ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
-            nativeBuildInputs = [ pkgs.pkg-config ];
-            buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.libiconv
-            ];
-            meta = with pkgs.lib; {
-              description = "A high-performance terminal session and workspace navigator";
-              homepage = "https://github.com/kiyors/omega";
-              license = licenses.mit;
-              mainProgram = "omega";
-            };
-          };
+          default = pkgs.callPackage ./nix/package.nix { };
+          omega = pkgs.callPackage ./nix/package.nix { };
         }
       );
 
+      # Delegates devShell to ./nix/devshell.nix
       devShells = forEachSupportedSystem (
         { pkgs }:
         {
-          default = pkgs.mkShell {
-            packages =
-              with pkgs;
-              [
-                rustToolchain
-                openssl
-                pkg-config
-                rust-analyzer
-                taplo
-              ]
-              ++ lib.optionals stdenv.isDarwin [
-                libiconv
-              ];
-
-            env = {
-              # Required by rust-analyzer
-              RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
-            };
-
-            shellHook = ''
-              # Unset the Nix-injected SDK root so xcrun falls back to the host system
-              unset SDKROOT
-              unset DEVELOPER_DIR
-
-              # Re-assert the true system binary paths ahead of the Nix sandbox
-              export PATH="/usr/bin:/usr/sbin:/usr/local/bin:$PATH"
-            '';
+          default = import ./nix/devshell.nix {
+            inherit pkgs;
+            rustToolchain = pkgs.rustToolchain;
           };
         }
       );

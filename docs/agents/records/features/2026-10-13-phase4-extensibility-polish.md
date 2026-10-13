@@ -90,3 +90,31 @@ Following the two-axis code review against Standards (`AGENTS.md`) and Spec (`ro
 - **Custom Sources in CLI**: Added `eval_custom_sources` integration in `omega connect` and `omega list` so dynamically registered Lua candidates are recognized across CLI subcommands.
 - **Domain String Key Projections**: Added `SessionSource::as_str(&self) -> &'static str` to replace inline enum matching.
 - **TUI Keymaps & Fallthrough Protection**: Wired `<CR>` (connect) and `<C-x>` / `kill_session` actions in the TUI event loop, while guarding unmapped control key events from inserting into query text.
+
+---
+
+## 4. Subagent Audit & Ecosystem Polish (Nix, Rust 1.99.0, Lua Architecture & Performance)
+
+Following a comprehensive subagent audit spanning standards, spec compliance, performance, and Lua runtime ergonomics:
+
+1. **Rust 1.99.0 Pinning & Modular Nix Architecture**:
+   - Locked toolchain to `1.99.0` via `rust-toolchain.toml` with `clippy` and `rustfmt` profiles.
+   - Modularized Nix build infrastructure: decoupled `nix/package.nix` (`buildRustPackage` derivation) and `nix/devshell.nix` (developer environment pinned to 1.99.0 via fenix), keeping `flake.nix` minimal, clean, and extensible.
+   - Updated integration tests in `tests/packaging_test.rs` to verify the presence of `rust-toolchain.toml` and `nix/package.nix`.
+
+2. **Lua Runtime Architecture & Quality of Life (QoL)**:
+   - Consolidated fragmented mutexes in `LuaEngine` into a single `Arc<Mutex<LuaState>>`, eliminating lock contention and ensuring thread-safe access to the single-threaded `mlua::Lua` runtime.
+   - Made `omega.session_name` chainable (`Vec<Arc<RegistryKey>>`), cascading through registered naming callbacks until one returns a non-nil name.
+   - Isolated plugin error handling: `load_plugins` captures runtime errors per plugin file and populates engine `diagnostics`, allowing other plugins to load unimpeded.
+   - Exposed `omega.version` and `omega.log` (`info`, `warn`, `error`) utilities in the Lua global scope.
+
+3. **Performance & Allocation Reductions (`AGENTS.md §5.1, §5.2`)**:
+   - Added `match_wildcard_with_home` in `crates/session/src/layout.rs` and hoisted environment variable lookups (`HOME`) out of the candidate loop in `crates/session/src/collector.rs`.
+   - Optimized path resolution in `crates/session/src/naming.rs`: replaced full component heap allocation (`collect::<Vec<_>>()`) with `.rev().take(count)`, and precompiled regex substitutions once per resolution pass.
+
+4. **Spec Polish & Edge Cases**:
+   - Wildcard startup commands in `smart_connect`: executed via `tmux.send_keys(&created.pane_id, cmd)` rather than as the primary window command, preventing non-interactive or short-lived commands (e.g. `cargo check`) from terminating the session window upon completion.
+   - Added `~` home directory expansion to alias path matching in `smart_connect`.
+   - Enhanced target path detection in `omega connect <target>` so leading `/`, `~`, or `.` paths are recognized as filesystem targets even before the directory is created.
+   - Added `config.json` fallback verification to `omega doctor`.
+

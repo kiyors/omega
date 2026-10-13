@@ -6,13 +6,22 @@ use std::path::Path;
 /// Matches a filesystem path against a slice of wildcard rules.
 /// Supports `~` home expansion, `*` (single segment wildcard), and `**` (recursive wildcard).
 pub fn match_wildcard<'a>(path: &Path, rules: &'a [WildcardRule]) -> Option<&'a WildcardRule> {
-    let path_str = path.to_string_lossy();
     let home = std::env::var("HOME").ok();
+    match_wildcard_with_home(path, rules, home.as_deref())
+}
+
+/// Matches a filesystem path against a slice of wildcard rules with a pre-resolved home directory.
+pub fn match_wildcard_with_home<'a>(
+    path: &Path,
+    rules: &'a [WildcardRule],
+    home: Option<&str>,
+) -> Option<&'a WildcardRule> {
+    let path_str = path.to_string_lossy();
 
     rules.iter().find(|rule| {
         if let Some(stripped_pat) = rule.pattern.strip_prefix("~/") {
-            if let Some(home_dir) = &home
-                && let Some(rest) = path_str.strip_prefix(home_dir.as_str())
+            if let Some(home_dir) = home
+                && let Some(rest) = path_str.strip_prefix(home_dir)
             {
                 let rest = rest.strip_prefix('/').unwrap_or(rest);
                 return glob_match(stripped_pat, rest);

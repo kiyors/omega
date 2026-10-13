@@ -9,67 +9,97 @@ use std::sync::{Arc, Mutex};
 type HookMap = HashMap<String, Vec<Arc<RegistryKey>>>;
 type SourceList = Vec<(String, Arc<RegistryKey>)>;
 
+struct LuaState {
+    config: Config,
+    naming_hooks: Vec<Arc<RegistryKey>>,
+    hooks: HookMap,
+    sources: SourceList,
+    diagnostics: Vec<String>,
+}
+
 /// Embedded Lua 5.4 runtime host for Omega.
 #[derive(Clone)]
 pub struct LuaEngine {
     lua: Arc<Mutex<Lua>>,
-    config: Arc<Mutex<Config>>,
-    naming_hook: Arc<Mutex<Option<Arc<RegistryKey>>>>,
-    hooks: Arc<Mutex<HookMap>>,
-    sources: Arc<Mutex<SourceList>>,
+    state: Arc<Mutex<LuaState>>,
 }
 
 impl LuaEngine {
     /// Initializes a new Lua 5.4 runtime with the `omega` global and `package.loaded["omega"]` table.
     pub fn new() -> LuaResult<Self> {
         let lua = Lua::new();
-        let config = Arc::new(Mutex::new(Config::default()));
-        let naming_hook: Arc<Mutex<Option<Arc<RegistryKey>>>> = Arc::new(Mutex::new(None));
-        let hooks: Arc<Mutex<HookMap>> = Arc::new(Mutex::new(HashMap::new()));
-        let sources: Arc<Mutex<SourceList>> = Arc::new(Mutex::new(Vec::new()));
+        let state = Arc::new(Mutex::new(LuaState {
+            config: Config::default(),
+            naming_hooks: Vec::new(),
+            hooks: HashMap::new(),
+            sources: Vec::new(),
+            diagnostics: Vec::new(),
+        }));
 
         let omega = lua.create_table()?;
 
+        // omega.version
+        omega.set("version", env!("CARGO_PKG_VERSION"))?;
+
+        // omega.log.{info, warn, error}
+        let log_tbl = lua.create_table()?;
+        let log_info = lua.create_function(|_lua, msg: String| {
+            eprintln!("[omega:info] {msg}");
+            Ok(())
+        })?;
+        let log_warn = lua.create_function(|_lua, msg: String| {
+            eprintln!("[omega:warn] {msg}");
+            Ok(())
+        })?;
+        let log_error = lua.create_function(|_lua, msg: String| {
+            eprintln!("[omega:error] {msg}");
+            Ok(())
+        })?;
+        log_tbl.set("info", log_info)?;
+        log_tbl.set("warn", log_warn)?;
+        log_tbl.set("error", log_error)?;
+        omega.set("log", log_tbl)?;
+
         // omega.setup({ ... })
-        let cfg_clone = Arc::clone(&config);
+        let st_setup = Arc::clone(&state);
         let setup_fn = lua.create_function(move |lua, value: LuaValue| {
             let parsed_config: Config = lua.from_value(value)?;
-            if let Ok(mut cfg) = cfg_clone.lock() {
-                *cfg = parsed_config;
+            if let Ok(mut st) = st_setup.lock() {
+                st.config = parsed_config;
             }
             Ok(())
         })?;
         omega.set("setup", setup_fn)?;
 
-        // omega.session_name(function)
-        let naming_clone = Arc::clone(&naming_hook);
+        // omega.session_name(function) — chainable hooks
+        let st_naming = Arc::clone(&state);
         let session_name_fn = lua.create_function(move |lua, func: LuaFunction| {
             let key = Arc::new(lua.create_registry_value(func)?);
-            if let Ok(mut hook) = naming_clone.lock() {
-                *hook = Some(key);
+            if let Ok(mut st) = st_naming.lock() {
+                st.naming_hooks.push(key);
             }
             Ok(())
         })?;
         omega.set("session_name", session_name_fn)?;
 
         // omega.on(event, function)
-        let hooks_clone = Arc::clone(&hooks);
+        let st_hooks = Arc::clone(&state);
         let on_fn = lua.create_function(move |lua, (event, func): (String, LuaFunction)| {
             let key = Arc::new(lua.create_registry_value(func)?);
-            if let Ok(mut map) = hooks_clone.lock() {
-                map.entry(event).or_default().push(key);
+            if let Ok(mut st) = st_hooks.lock() {
+                st.hooks.entry(event).or_default().push(key);
             }
             Ok(())
         })?;
         omega.set("on", on_fn)?;
 
         // omega.register_source(name, function)
-        let sources_clone = Arc::clone(&sources);
+        let st_sources = Arc::clone(&state);
         let register_src_fn =
             lua.create_function(move |lua, (name, func): (String, LuaFunction)| {
                 let key = Arc::new(lua.create_registry_value(func)?);
-                if let Ok(mut src_list) = sources_clone.lock() {
-                    src_list.push((name, key));
+                if let Ok(mut st) = st_sources.lock() {
+                    st.sources.push((name, key));
                 }
                 Ok(())
             })?;
@@ -83,10 +113,7 @@ impl LuaEngine {
 
         Ok(Self {
             lua: Arc::new(Mutex::new(lua)),
-            config,
-            naming_hook,
-            hooks,
-            sources,
+            state,
         })
     }
 
@@ -107,10 +134,18 @@ impl LuaEngine {
 
     /// Access the current parsed configuration snapshot.
     pub fn config(&self) -> Config {
-        self.config
+        self.state
             .lock()
-            .map(|c| c.clone())
-            .unwrap_or_else(|_| Config::default())
+            .map(|st| st.config.clone())
+            .unwrap_or_default()
+    }
+
+    /// Returns recorded diagnostics and non-fatal plugin warnings.
+    pub fn diagnostics(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .map(|st| st.diagnostics.clone())
+            .unwrap_or_default()
     }
 
     /// Configures `package.path` so that user modules in `config_dir/lua/` can be required.
@@ -132,6 +167,7 @@ impl LuaEngine {
     }
 
     /// Executes all plugin scripts (*.lua) in `config_dir/plugins/`.
+    /// Catches and records errors per plugin file so a failing script does not prevent other plugins from running.
     pub fn load_plugins(&self, config_dir: &Path) -> LuaResult<()> {
         let plugins_dir = config_dir.join("plugins");
         if !plugins_dir.is_dir() {
@@ -149,37 +185,46 @@ impl LuaEngine {
             .lua
             .lock()
             .map_err(|e| LuaError::external(format!("{e}")))?;
+
         for entry in entries {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("lua") {
                 let code = fs::read_to_string(&path).map_err(LuaError::external)?;
-                lua.load(&code).set_name(path.to_string_lossy()).exec()?;
+                let res = lua.load(&code).set_name(path.to_string_lossy()).exec();
+                if let Err(e) = res {
+                    let msg = format!("Plugin error in {}: {e}", path.display());
+                    eprintln!("[omega:warn] {msg}");
+                    if let Ok(mut st) = self.state.lock() {
+                        st.diagnostics.push(msg);
+                    }
+                }
             }
         }
 
         Ok(())
     }
 
-    /// Loads and executes a Lua file at the specified path.
+    /// Executes a Lua script file.
     pub fn load_file(&self, path: &Path) -> LuaResult<()> {
         let code = fs::read_to_string(path).map_err(LuaError::external)?;
-        let lua = self
-            .lua
-            .lock()
-            .map_err(|e| LuaError::external(format!("{e}")))?;
-        lua.load(&code).set_name(path.to_string_lossy()).exec()
+        self.load_string_named(&code, &path.to_string_lossy())
     }
 
-    /// Loads and executes a Lua code string directly.
+    /// Executes a raw Lua code chunk.
     pub fn load_string(&self, code: &str) -> LuaResult<()> {
+        self.load_string_named(code, "chunk")
+    }
+
+    /// Executes a named raw Lua code chunk (useful for stacktraces).
+    pub fn load_string_named(&self, code: &str, chunk_name: &str) -> LuaResult<()> {
         let lua = self
             .lua
             .lock()
             .map_err(|e| LuaError::external(format!("{e}")))?;
-        lua.load(code).exec()
+        lua.load(code).set_name(chunk_name).exec()
     }
 
-    /// Evaluates a global variable and returns its deserialized value.
+    /// Evaluates a global Lua variable by name (used for unit testing assertions).
     pub fn eval_global<T: FromLua>(&self, name: &str) -> LuaResult<T> {
         let lua = self
             .lua
@@ -188,40 +233,58 @@ impl LuaEngine {
         lua.globals().get(name)
     }
 
-    /// Invokes the custom session name hook, if registered.
+    /// Invokes custom session name hooks in registration order, returning the first non-empty string.
     pub fn call_session_name_hook(
         &self,
         path: &Path,
         git_context: Option<&GitContext>,
     ) -> Option<String> {
-        let key_opt = self.naming_hook.lock().ok()?.as_ref().cloned()?;
-        let lua = self.lua.lock().ok()?;
-        let hook: LuaFunction = lua.registry_value(&key_opt).ok()?;
-        let path_str = path.to_string_lossy();
-
-        let res: LuaValue = if let Some(ctx) = git_context {
-            let git_table = lua.create_table().ok()?;
-            git_table.set("repo", ctx.repo.as_str()).ok()?;
-            git_table.set("branch", ctx.branch.as_str()).ok()?;
-            hook.call((path_str.as_ref(), git_table)).ok()?
-        } else {
-            hook.call((path_str.as_ref(), LuaValue::Nil)).ok()?
+        let keys = {
+            let st = self.state.lock().ok()?;
+            st.naming_hooks.clone()
         };
 
-        match res {
-            LuaValue::String(s) => s.to_str().ok().map(|slice| slice.to_owned()),
-            _ => None,
+        if keys.is_empty() {
+            return None;
         }
+
+        let lua = self.lua.lock().ok()?;
+        let path_str = path.to_string_lossy();
+
+        for key in keys {
+            if let Ok(hook) = lua.registry_value::<LuaFunction>(&key) {
+                let res: LuaResult<LuaValue> = if let Some(ctx) = git_context {
+                    if let Ok(git_table) = lua.create_table() {
+                        let _ = git_table.set("repo", ctx.repo.as_str());
+                        let _ = git_table.set("branch", ctx.branch.as_str());
+                        hook.call((path_str.as_ref(), git_table))
+                    } else {
+                        hook.call((path_str.as_ref(), LuaValue::Nil))
+                    }
+                } else {
+                    hook.call((path_str.as_ref(), LuaValue::Nil))
+                };
+
+                if let Ok(LuaValue::String(s)) = res
+                    && let Ok(name) = s.to_str()
+                    && !name.trim().is_empty()
+                {
+                    return Some(name.to_owned());
+                }
+            }
+        }
+
+        None
     }
 
     /// Dispatches a lifecycle event to registered event hooks (e.g. `session_created`, `session_switched`).
     pub fn dispatch_hook(&self, event: &str, payload: &SessionEventPayload) -> LuaResult<()> {
         let keys = {
-            let map = self
-                .hooks
+            let st = self
+                .state
                 .lock()
                 .map_err(|e| LuaError::external(format!("{e}")))?;
-            map.get(event).cloned().unwrap_or_default()
+            st.hooks.get(event).cloned().unwrap_or_default()
         };
 
         if keys.is_empty() {
@@ -247,11 +310,11 @@ impl LuaEngine {
     /// Evaluates all custom dynamic candidate sources registered via `omega.register_source`.
     pub fn eval_custom_sources(&self) -> LuaResult<Vec<CustomCandidate>> {
         let sources = {
-            let list = self
-                .sources
+            let st = self
+                .state
                 .lock()
                 .map_err(|e| LuaError::external(format!("{e}")))?;
-            list.clone()
+            st.sources.clone()
         };
 
         let lua = self
@@ -261,20 +324,25 @@ impl LuaEngine {
         let mut results = Vec::new();
 
         for (source_name, key) in sources {
-            if let Ok(func) = lua.registry_value::<LuaFunction>(&key)
-                && let Ok(table) = func.call::<LuaTable>(())
-            {
-                for row in table.sequence_values::<LuaTable>().flatten() {
-                    let name: String = row.get("name").unwrap_or_default();
-                    let path_str: String = row.get("path").unwrap_or_default();
-                    let icon: Option<String> = row.get("icon").ok();
-                    if !name.is_empty() && !path_str.is_empty() {
-                        results.push(CustomCandidate {
-                            source_name: source_name.clone(),
-                            name,
-                            path: PathBuf::from(path_str),
-                            icon,
-                        });
+            if let Ok(func) = lua.registry_value::<LuaFunction>(&key) {
+                match func.call::<LuaTable>(()) {
+                    Ok(table) => {
+                        for row in table.sequence_values::<LuaTable>().flatten() {
+                            let name: String = row.get("name").unwrap_or_default();
+                            let path_str: String = row.get("path").unwrap_or_default();
+                            let icon: Option<String> = row.get("icon").ok();
+                            if !name.is_empty() && !path_str.is_empty() {
+                                results.push(CustomCandidate {
+                                    source_name: source_name.clone(),
+                                    name,
+                                    path: PathBuf::from(path_str),
+                                    icon,
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[omega:warn] Source '{source_name}' evaluation error: {e}");
                     }
                 }
             }

@@ -41,3 +41,23 @@ fn test_nix_flake_declares_package_build() {
         "flake.nix package should be named omega"
     );
 }
+
+#[test]
+fn test_rust_toolchain_and_modular_nix_structure() {
+    let toolchain_path = Path::new("rust-toolchain.toml");
+    assert!(toolchain_path.exists(), "rust-toolchain.toml must exist");
+    let toolchain_content = fs::read_to_string(toolchain_path).unwrap();
+    assert!(
+        toolchain_content.contains("channel = \"1.99.0\""),
+        "rust toolchain channel must be locked to 1.99.0"
+    );
+
+    let pkg_path = Path::new("nix/package.nix");
+    assert!(pkg_path.exists(), "nix/package.nix must exist");
+    let pkg_content = fs::read_to_string(pkg_path).unwrap();
+    assert!(pkg_content.contains("buildRustPackage"));
+    assert!(pkg_content.contains("pname = \"omega\""));
+
+    let devshell_path = Path::new("nix/devshell.nix");
+    assert!(devshell_path.exists(), "nix/devshell.nix must exist");
+}
