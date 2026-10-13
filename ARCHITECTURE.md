@@ -13,9 +13,11 @@ Omega is designed around a modular Rust workspace architecture. Domain logic and
 ```text
 omega/
 ├── crates/                    # Subsystem crates (workspace members)
-│   ├── session/               # Session discovery (tmux, git, local directories)
+│   ├── config/                # Configuration parsing & user preferences
 │   ├── search/                # Fuzzy filtering & ranking engine (Skim / Nucleo)
-│   └── config/                # Configuration parsing & user preferences
+│   ├── tmux/                  # Low-level tmux client, layout parsing, actions & mock harnesses
+│   ├── session/               # Pure domain session discovery, naming, dedup & preview generation
+│   └── daemon/                # Background IPC daemon, candidate caching worker, snapshot store & focus restore
 ├── src/                       # Application orchestrator & interactive TUI
 │   ├── main.rs                # Process initialization & terminal lifecycle
 │   ├── app.rs                 # Central application state machine & action dispatch
@@ -68,14 +70,20 @@ Omega operates as an event-driven terminal application that reads active environ
 +────────────────────────────────────────────────┴──────────────────────+
 |                           Core Subsystems                             |
 |                                                                       |
-|   ┌───────────────────────────┐          ┌────────────────────────┐   |
-|   │    Fuzzy Search Engine    │          │   Session Discovery    │   |
-|   │     (crates/search)       │          │    (crates/session)    │   |
-|   └───────────────────────────┘          └───────────┬────────────┘   |
-+──────────────────────────────────────────────────────┼────────────────+
-                                                       │
-                                 System Enquiries      │ Handoff / Exec
-                                                       ▼
+|   ┌───────────────────┐  ┌──────────────────┐  ┌──────────────────┐   |
+|   │   Search Engine   │  │ Session Engine   │  │   Daemon & IPC   │   |
+|   │  (crates/search)  │  │ (crates/session) │  │ (crates/daemon)  │   |
+|   └───────────────────┘  └────────┬─────────┘  └────────┬─────────┘   |
++───────────────────────────────────┼─────────────────────┼─────────────+
+                                    │                     │
+                                    │ Tmux Client Calls   │ State Sync
+                                    ▼                     ▼
++───────────────────────────────────────────────────────────────────────+
+|                           Tmux Subsystem                              |
+|                           (crates/tmux)                               |
++───────────────────────────────────┬───────────────────────────────────+
+                                    │
+                                    ▼ Multiplexer Exec / OS Handoff
 +───────────────────────────────────────────────────────────────────────+
 |                         Operating System & CLI                        |
 |                                                                       |
@@ -99,26 +107,40 @@ Omega operates as an event-driven terminal application that reads active environ
   - `event.rs`: Asynchronous/polling event channel delivering tick intervals and keypresses.
   - `ui.rs`: Two-pane Ratatui layout engine: candidate list on the left, live debounced preview on the right (55% width, auto-collapsing below 100 columns).
 
-### 3.2. Session Discovery & Persistence (`crates/session` / Module)
+### 3.2. Tmux Multiplexer Subsystem (`crates/tmux` / `omega-tmux`)
 
-- **Primary Responsibility**: Discovers navigable destinations across tmux sessions, git repositories, linked worktrees, and configured directory roots; manages tmux session state capture, layout restoration, rolling snapshot storage, and the background IPC cache daemon.
+- **Primary Responsibility**: Owns the low-level Tmux command abstraction, raw tmux output parsing, native layout management, action dispatch (`connect`, `kill`, `last`), and test mock client implementations.
+- **Key Types & Functions**:
+  - `TmuxClient`: Core trait abstracting tmux interactions (`create_session`, `create_window`, `split_pane`, `apply_layout`, `select_window`, `select_pane`, `switch_client`, `attach_session`, `kill_session`, `capture_pane`, `capture_state`).
+  - `RealTmuxClient`: Zero-cost production multiplexer client invoking `std::process::Command` without shell escaping vulnerabilities. Includes resilient `tiled` layout fallback.
+  - `MockTmuxClient`: Deterministic mock implementation recording session creation, window splitting, layout application, and active selections for unit testing.
+  - `parse_session_state`: Parser transforming tab-separated `list-sessions`, `list-windows`, and `list-panes` streams into structured hierarchical state models (`TmuxSessionState`, `TmuxWindowState`, `TmuxPaneState`).
+  - `TmuxActionRunner`: Coordinates high-level connection handoffs, switching inside tmux vs. attaching outside tmux.
+
+### 3.3. Session Discovery & Domain Engine (`crates/session` / `omega-session`)
+
+- **Primary Responsibility**: Discovers navigable destinations across tmux, git repositories, linked worktrees, zoxide, and configuration aliases; provides canonical naming, deduplication, and context-aware preview text. 100% OS-agnostic (zero C/POSIX dependencies).
 - **Key Modules**:
   - `discovery.rs`: Multi-source candidate discovery and recursive `.git` worktree pointer/admin inspection.
   - `naming.rs`: Deterministic tmux session name resolution, character sanitization, and `<repo>--<sanitized-branch>` worktree normalization.
-  - `preview.rs`: Context-aware preview provider (`PreviewGenerator`) extracting live `tmux capture-pane`, `git status -s` + recent commit log, or directory tree previews.
-  - `tmux.rs`: Multiplexer client abstraction (`TmuxClient`, `RealTmuxClient`, `MockTmuxClient`) with pane capture, session lifecycle management, and full layout/pane reconstruction.
-  - `snapshot.rs`: Structured JSON snapshot serialization/deserialization, atomic rolling history retention (keeps last 10 auto-saves with atomic `latest.json` pointer), and named snapshot persistence.
-  - `daemon.rs`: Lightweight Unix domain socket background cache daemon and client (`DaemonServer`, `DaemonClient`, `fetch_candidates_or_fallback`) enabling sub-5ms candidate queries and 15-minute periodic auto-save timers.
-- **Isolation Invariant**: Operates independently of UI concerns. Exposes typed structs (`SessionCandidate`, `SessionSource`, `Snapshot`, `DaemonStatus`) without importing UI or rendering dependencies.
-- **Technologies**: `walkdir`, `dirs`, `std::process::Command`.
+  - `collector.rs`: High-performance deduplication (`SessionCollector`) merging candidates across sources, prioritizing active tmux sessions while inheriting user aliases and icons.
+  - `preview.rs`: Context-aware preview provider (`PreviewGenerator`) extracting live `tmux capture-pane`, `git status -s` + recent commit log, or directory tree listings.
+- **Isolation Invariant**: Operates independently of platform-specific Unix IPC or signal handling.
 
-### 3.3. Fuzzy Search Engine (`crates/search` / Module)
+### 3.4. Persistence & Cache Daemon Subsystem (`crates/daemon` / `omega-daemon`)
+
+- **Primary Responsibility**: Manages snapshot serialization, rolling retention, focus restoration, and the Unix domain socket background cache daemon.
+- **Key Modules**:
+  - `snapshot.rs`: Structured JSON snapshot serialization/deserialization (`Snapshot`), atomic rolling history retention (keeps last 10 auto-saves with atomic `latest.json` pointer), named snapshot persistence, and focus-preserving session reconstruction (`SnapshotManager`).
+  - `daemon.rs`: Lightweight Unix domain socket background cache daemon (`DaemonServer`) with a decoupled background scanning thread for sub-millisecond socket responses, client transport (`DaemonClient`), signal handlers, and cross-platform non-Unix fallback stubs for clean compilation across targets.
+
+### 3.5. Fuzzy Search Engine (`crates/search` / `omega-search`)
 
 - **Primary Responsibility**: High-throughput scoring and indexing of session candidates against user keystrokes.
 - **Performance Boundary**: Zero heap allocation in hot search paths. Uses borrowed string slices and cached index lists (`Vec<usize>`).
 - **Technologies**: `fuzzy-matcher` (Skim / Nucleo algorithm).
 
-### 3.4. Configuration Subsystem (`crates/config` / Module)
+### 3.6. Configuration Subsystem (`crates/config` / `omega-config`)
 
 - **Primary Responsibility**: Serializes and validates user configuration (default directories, search excludes, keybindings, and TUI settings such as `preview`, `preview_width`, and `preview_border`).
 - **Technologies**: Serde, TOML / JSON.
