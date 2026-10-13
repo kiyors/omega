@@ -7,7 +7,6 @@ edition.workspace = true
 omega-config.workspace = true
 omega-tmux.workspace   = true
 serde.workspace        = true
-serde_json.workspace   = true
 walkdir.workspace      = true
 
 [dev-dependencies]

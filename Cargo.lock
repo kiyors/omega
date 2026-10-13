@@ -1004,7 +1004,6 @@ dependencies = [
  "omega-config",
  "omega-tmux",
  "serde",
- "serde_json",
  "tempfile",
  "walkdir",
 ]
