@@ -14,7 +14,7 @@ jobs:
   check-dependencies:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Fast pre-built binary installers
       - uses: taiki-e/install-action@cargo-deny
